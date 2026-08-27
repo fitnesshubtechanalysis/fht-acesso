@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<title>FHT Access — Instalação na academia</title>
+<style>
+  @page { margin: 18mm 16mm; size: A4; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", Calibri, Arial, sans-serif;
+    font-size: 11pt;
+    line-height: 1.45;
+    color: #1a1a1a;
+    max-width: 820px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 22pt; margin: 0 0 8px; color: #111; }
+  h2 { font-size: 14pt; margin: 22px 0 8px; color: #145C38; page-break-after: avoid; border-bottom: 1px solid #d8e8df; padding-bottom: 4px; }
+  h3 { font-size: 12pt; margin: 16px 0 6px; color: #222; page-break-after: avoid; }
+  p, li { margin: 6px 0; }
+  ul, ol { padding-left: 22px; }
+  code {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 9.5pt;
+    background: #f3f4f6;
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+  pre {
+    background: #111;
+    color: #f3f4f6;
+    padding: 12px 14px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 9pt;
+    line-height: 1.4;
+    page-break-inside: avoid;
+  }
+  pre code { background: none; color: inherit; padding: 0; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0 14px;
+    font-size: 10pt;
+    page-break-inside: avoid;
+  }
+  th, td {
+    border: 1px solid #d1d5db;
+    padding: 7px 8px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: #145C38; color: #fff; font-weight: 600; }
+  tr:nth-child(even) td { background: #f7faf8; }
+  .muted { color: #555; }
+  .cover {
+    border-left: 6px solid #F15A29;
+    padding: 4px 0 4px 16px;
+    margin-bottom: 22px;
+  }
+  .cover .brand { color: #F15A29; font-weight: 700; letter-spacing: 0.08em; font-size: 10pt; }
+  input[type="checkbox"] { margin-right: 6px; }
+  hr { border: none; border-top: 1px solid #e5e7eb; margin: 18px 0; }
+  a { color: #145C38; }
+</style>
+</head>
+<body>
+<div class="cover">
+  <div class="brand">FHT ACCESS</div>
+  <h1>Instalação na academia</h1>
+  <p class="muted">Guia para instalar o totem sem levar código-fonte. Publique o app no PC de desenvolvimento e copie só a pasta compilada para o computador do acesso.</p>
+</div>
+
+<h2>1. O que vai para a academia</h2>
+<table>
+  <thead><tr><th>Levar</th><th>Não levar</th></tr></thead>
+  <tbody>
+    <tr><td>Pasta <code>publish\win-x64\</code> (ZIP ou pendrive)</td><td>Repositório git, <code>.cs</code>, SDK</td></tr>
+    <tr><td><code>FHT.Access.App.exe</code> + DLLs + <code>models\</code></td><td><code>access.db</code> do seu PC de teste</td></tr>
+    <tr><td>Anotações de <code>deviceId</code> / <code>deviceSecret</code></td><td>Faciais cadastrados em dev</td></tr>
+  </tbody>
+</table>
+<p><strong>Tamanho aproximado:</strong> ~300 MB (inclui .NET 8 + OpenCV + modelos de face).</p>
+<p><strong>Dados na academia</strong> ficam separados do executável:</p>
+<pre><code>%LOCALAPPDATA%\FHT\Access\
+  appsettings.json    ← configuração
+  access.db           ← alunos + faciais locais
+  logs\               ← diagnóstico</code></pre>
+
+<h2>2. Gerar o pacote (PC de desenvolvimento)</h2>
+<p>Pré-requisito: .NET 8 SDK instalado.</p>
+<pre><code>cd c:\Projetos\FHT\fht-acesso
+.\scripts\publish-academia.ps1</code></pre>
+<p>Ou manualmente:</p>
+<pre><code>dotnet publish src\FHT.Access.App\FHT.Access.App.csproj `
+  -c Release `
+  -r win-x64 `
+  --self-contained true `
+  -o publish\win-x64</code></pre>
+<p>Compacte <code>publish\win-x64</code> em ZIP e transfira.</p>
+<h3>Versão “slim” (opcional, ~80 MB)</h3>
+<p>Só use se o PC da academia já tiver .NET 8 Desktop Runtime instalado:</p>
+<pre><code>dotnet publish src\FHT.Access.App\FHT.Access.App.csproj `
+  -c Release -r win-x64 --self-contained false `
+  -o publish\win-x64-slim</code></pre>
+
+<h2>3. Instalar no PC do totem</h2>
+<ol>
+  <li>Extraia para uma pasta fixa, ex.: <code>C:\FHT\Access\</code></li>
+  <li>Execute <code>FHT.Access.App.exe</code> uma vez (cria <code>%LOCALAPPDATA%\FHT\Access\</code>)</li>
+  <li>Feche e edite a configuração (passo 4)</li>
+  <li>Abra de novo e valide</li>
+</ol>
+<h3>Iniciar com o Windows</h3>
+<ul>
+  <li>Atalho na pasta <strong>Inicial do Windows</strong> apontando para <code>C:\FHT\Access\FHT.Access.App.exe</code>, ou</li>
+  <li><strong>Agendador de Tarefas</strong> → disparo “Ao iniciar o sistema” → mesmo executável</li>
+</ul>
+<p>O app fica na bandeja do sistema; fechar a janela <strong>não</strong> desliga o reconhecimento.</p>
+
+<h2>4. Configuração (<code>appsettings.json</code>)</h2>
+<p>Arquivo: <code>%LOCALAPPDATA%\FHT\Access\appsettings.json</code></p>
+<p>Exemplo para piloto:</p>
+<pre><code>{
+  "gestaoBaseUrl": "https://SUA-API-GESTAO/",
+  "unitId": "uuid-da-unidade",
+  "deviceId": "uuid-do-dispositivo",
+  "deviceSecret": "segredo-gerado-uma-vez",
+  "useFakeTurnstile": false,
+  "turnstileNetwork": "",
+  "turnstileIp": "192.168.0.100",
+  "turnstileSerial": "",
+  "webcamIndex": 0,
+  "faceMatchThreshold": 0.35,
+  "adminPin": "1234",
+  "attendantIdleMinutes": 5,
+  "kioskPortrait": true
+}</code></pre>
+<table>
+  <thead><tr><th>Campo</th><th>Descrição</th></tr></thead>
+  <tbody>
+    <tr><td><code>gestaoBaseUrl</code></td><td>URL base da API Gestão (com <code>/</code> no final). <strong>Não use localhost na academia.</strong></td></tr>
+    <tr><td><code>unitId</code></td><td>UUID da unidade (Centro, etc.)</td></tr>
+    <tr><td><code>deviceId</code> / <code>deviceSecret</code></td><td>Credenciais do dispositivo de acesso (criadas no Gestão)</td></tr>
+    <tr><td><code>useFakeTurnstile</code></td><td><code>true</code> = simula catraca (dev). <strong><code>false</code> na academia.</strong></td></tr>
+    <tr><td><code>turnstileIp</code></td><td>IP da placa Toletus LiteNet3 na rede local</td></tr>
+    <tr><td><code>webcamIndex</code></td><td><code>0</code> = primeira câmera USB; mude se abrir câmera errada</td></tr>
+    <tr><td><code>faceMatchThreshold</code></td><td><code>0.35</code> recomendado. Valores altos (&gt;0.7) migram sozinhos para 0.35</td></tr>
+    <tr><td><code>adminPin</code></td><td>PIN do modo atendente (<code>Ctrl+Shift+A</code>) — <strong>troque antes do piloto</strong></td></tr>
+  </tbody>
+</table>
+
+<h2>5. Criar dispositivo no Gestão</h2>
+<p>No <strong>fht-gestao-api</strong>, com token de staff:</p>
+<pre><code>POST /api/v1/units/{unitId}/access-devices
+Content-Type: application/json
+
+{
+  "name": "Totem Entrada Centro",
+  "type": "face_reader"
+}</code></pre>
+<p>A resposta traz <code>id</code>, <code>deviceSecret</code> e aviso: <strong>o secret só aparece uma vez</strong>. Guarde em local seguro e cole no <code>appsettings.json</code> da academia.</p>
+<p>Teste de auth (opcional):</p>
+<pre><code>POST /api/v1/access/device-auth
+{ "deviceId": "...", "deviceSecret": "..." }</code></pre>
+
+<h2>6. Primeira sincronização</h2>
+<p>Com Gestão acessível e credenciais corretas:</p>
+<ol>
+  <li>Abra o totem → <strong>Ctrl+Shift+A</strong> → PIN admin</li>
+  <li><strong>Configurações</strong> → aba <strong>Gestão</strong></li>
+  <li><strong>Test Auth</strong> — deve passar</li>
+  <li><strong>Sync Members Now</strong> — importa alunos da unidade para o SQLite local</li>
+  <li>Aguarde ou confira <strong>Último sync</strong> no dashboard do atendente</li>
+</ol>
+<p>O <strong>sync automático</strong> roda a cada <strong>2 minutos</strong> (alunos + envio de eventos pendentes).</p>
+
+<h2>7. Catraca Toletus (produção)</h2>
+<p>Com <code>useFakeTurnstile: false</code>:</p>
+<ol>
+  <li>Placa na mesma rede do PC (ping no <code>turnstileIp</code>)</li>
+  <li>Admin → <strong>Catraca</strong> → IP / serial</li>
+  <li><strong>Connect</strong> → estado <strong>Connected</strong></li>
+  <li><strong>Liberar Entrada</strong> → deve registrar passagem (fake ~800 ms; real quando alguém passa)</li>
+</ol>
+<p>O fluxo facial usa o mesmo caminho após reconhecimento + matrícula vigente.</p>
+
+<h2>8. Cadastro facial na academia</h2>
+<ol>
+  <li><strong>Ctrl+Shift+A</strong> → login atendente</li>
+  <li><strong>Cadastrar facial</strong> → buscar aluno → capturar</li>
+  <li>Após captura, o totem volta ao modo automático em ~2 s</li>
+  <li>Aluno aproxima-se → deve reconhecer</li>
+</ol>
+<p><strong>Regra:</strong> um rosto = um aluno. Não cadastre o mesmo rosto em dois alunos de teste.</p>
+
+<h2>9. Comportamento esperado na catraca</h2>
+<table>
+  <thead><tr><th>Situação</th><th>Totem</th></tr></thead>
+  <tbody>
+    <tr><td>Plano vigente + facial OK</td><td>Libera + “Entrada registrada…”</td></tr>
+    <tr><td>Sem matrícula / inativo</td><td>“Não foi possível liberar. Procure a recepção.”</td></tr>
+    <tr><td>Rosto não cadastrado</td><td>“Não reconhecemos você” + botões (tentar, cadastrar, chamar atendente)</td></tr>
+    <tr><td>Recepção libera manual</td><td>Entrada auditada no Gestão</td></tr>
+  </tbody>
+</table>
+<p>A decisão usa <code>accessAllowed</code> do Gestão, atualizado antes de cada liberação.</p>
+
+<h2>10. Logs e suporte</h2>
+<table>
+  <thead><tr><th>O quê</th><th>Onde</th></tr></thead>
+  <tbody>
+    <tr><td>Log do dia</td><td><code>%LOCALAPPDATA%\FHT\Access\logs\access-YYYYMMDD.log</code></td></tr>
+    <tr><td>Boot / crash</td><td><code>%LOCALAPPDATA%\FHT\Access\boot.log</code></td></tr>
+    <tr><td>Banco local</td><td><code>%LOCALAPPDATA%\FHT\Access\access.db</code></td></tr>
+  </tbody>
+</table>
+<p>Linhas úteis no log:</p>
+<ul>
+  <li><code>Face identify: Nome score=… allowed=… reason=…</code></li>
+  <li><code>Auto-sync: N aluno(s), N evento(s).</code></li>
+  <li><code>Totem reativado (reconhecimento facial ligado).</code></li>
+</ul>
+
+<h2>11. Atualizar versão na academia</h2>
+<ol>
+  <li>No PC de dev: rode <code>publish-academia.ps1</code> de novo</li>
+  <li><strong>Feche</strong> o FHT Access na academia (bandeja → Sair)</li>
+  <li>Substitua os arquivos em <code>C:\FHT\Access\</code> (mantenha <code>%LOCALAPPDATA%\FHT\Access\</code> intacto)</li>
+  <li>Abra de novo</li>
+</ol>
+<p>Não apague <code>access.db</code> na atualização — só se quiser recomeçar do zero.</p>
+
+<h2>12. Piloto assistido — checklist</h2>
+<p>Use na ordem. Marque conforme for concluindo.</p>
+<h3>Antes de ir à academia</h3>
+<ul>
+  <li>☐ Gestão API publicada e estável (URL HTTPS, não localhost)</li>
+  <li>☐ Unidade com alunos sincronizados (EVO/import ok)</li>
+  <li>☐ Dispositivo criado no Gestão (<code>deviceId</code> + <code>deviceSecret</code> guardados)</li>
+  <li>☐ Pacote publicado (<code>publish\win-x64</code>) em ZIP</li>
+  <li>☐ PIN admin alterado (não deixar <code>1234</code> em produção)</li>
+  <li>☐ Limpar faciais de teste no PC de dev (opcional; na academia use DB limpo)</li>
+</ul>
+<h3>Hardware na academia</h3>
+<ul>
+  <li>☐ PC totem com Windows 10/11, câmera USB fixa, boa iluminação</li>
+  <li>☐ Rede: PC ↔ Gestão (internet) e PC ↔ catraca (LAN)</li>
+  <li>☐ IP fixo ou reserva DHCP para a placa Toletus</li>
+  <li>☐ Cabo de rede / Wi‑Fi estável</li>
+</ul>
+<h3>Instalação no dia</h3>
+<ul>
+  <li>☐ Extrair app em <code>C:\FHT\Access\</code></li>
+  <li>☐ Configurar <code>appsettings.json</code> (Gestão + device + <code>useFakeTurnstile: false</code>)</li>
+  <li>☐ Configurar catraca (IP, Connect no Admin)</li>
+  <li>☐ Test Auth + Sync Members</li>
+  <li>☐ Atalho / inicialização com Windows</li>
+  <li>☐ Tela em modo retrato se usar <code>kioskPortrait: true</code></li>
+</ul>
+<h3>Testes com recepção presente</h3>
+<ul>
+  <li>☐ Aluno <strong>com matrícula</strong> + facial cadastrada → libera</li>
+  <li>☐ Aluno <strong>sem matrícula</strong> + facial → recusa (recepção)</li>
+  <li>☐ Rosto desconhecido → tela “não reconhecemos”</li>
+  <li>☐ Liberação manual → passagem + evento no Gestão</li>
+  <li>☐ Desligar internet brevemente → totem continua; eventos sobem ao voltar sync</li>
+</ul>
+<h3>Primeira semana (piloto)</h3>
+<ul>
+  <li>☐ Recepção treinada: cadastro facial, manual, quando chamar TI</li>
+  <li>☐ Conferir logs diários (<code>Face identify</code>, <code>Auto-sync</code>)</li>
+  <li>☐ Ajustar <code>webcamIndex</code> / iluminação se falhar reconhecimento</li>
+  <li>☐ Lista de alunos vigentes vs. faciais cadastrados</li>
+</ul>
+
+<h2>13. Problemas comuns</h2>
+<table>
+  <thead><tr><th>Sintoma</th><th>Provável causa</th><th>Ação</th></tr></thead>
+  <tbody>
+    <tr><td>“Sistema offline”</td><td>Gestão inacessível ou sync antigo</td><td>Test Auth, URL, firewall</td></tr>
+    <tr><td>Sempre “não reconhece”</td><td>Modo atendente ativo ou facial inexistente</td><td>Aguardar volta ao totem; cadastrar facial</td></tr>
+    <tr><td>Reconhece mas não libera</td><td>Sem matrícula no Gestão</td><td>Normal — recepção ou regularizar plano</td></tr>
+    <tr><td>Libera pessoa errada</td><td>Mesmo rosto em dois cadastros</td><td>Remover facial duplicado</td></tr>
+    <tr><td>Catraca não abre</td><td>IP errado ou fake ainda true</td><td><code>useFakeTurnstile: false</code>, ping IP, Connect</td></tr>
+    <tr><td>Busca lenta</td><td>Primeira vez sem cache local</td><td>Aguardar sync; busca local é rápida depois</td></tr>
+  </tbody>
+</table>
+</body>
+</html>

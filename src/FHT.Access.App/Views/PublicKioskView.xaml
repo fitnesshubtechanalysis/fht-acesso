@@ -1,0 +1,529 @@
+<UserControl x:Class="FHT.Access.App.Views.PublicKioskView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="clr-namespace:FHT.Access.App.Views"
+             Background="#000000">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <views:InverseBooleanToVisibilityConverter x:Key="BoolToVisInverted" />
+        <SolidColorBrush x:Key="ActionGreen" Color="#00D17E" />
+        <SolidColorBrush x:Key="ErrorRed" Color="#FF3B30" />
+        <SolidColorBrush x:Key="FhtOrange" Color="#F15A29" />
+        <SolidColorBrush x:Key="CardBg" Color="#E6121212" />
+        <SolidColorBrush x:Key="FooterBg" Color="#111111" />
+
+        <Style x:Key="UnknownActionButton" TargetType="Button">
+            <Setter Property="Background" Value="#0D0D0D" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderThickness" Value="1.5" />
+            <Setter Property="Padding" Value="20,16" />
+            <Setter Property="Margin" Value="0,0,0,12" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="12"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Viewbox Stretch="Uniform">
+        <Grid Width="720" Height="1280" Background="#000000" ClipToBounds="True">
+
+            <!-- ===================== IDLE ===================== -->
+            <Grid Visibility="{Binding IsIdle, Converter={StaticResource BoolToVis}}">
+                <!-- Cover: preenche o totem e recorta o excesso da arte (mais alta que 9:16).
+                     Top = hero/títulos grandes, não a peça inteira reduzida. -->
+                <Image Source="pack://application:,,,/Assets/propaganda-idle.png"
+                       Stretch="None"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Margin="0,0,0,56"
+                       RenderOptions.BitmapScalingMode="HighQuality" />
+
+                <Border Height="56" VerticalAlignment="Bottom" Background="{StaticResource FooterBg}">
+                    <Grid Margin="24,0">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Left">
+                            <Ellipse Width="9" Height="9" Margin="0,0,8,0" VerticalAlignment="Center">
+                                <Ellipse.Style>
+                                    <Style TargetType="Ellipse">
+                                        <Setter Property="Fill" Value="#555555" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsOnline}" Value="True">
+                                                <Setter Property="Fill" Value="#00D17E" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Ellipse.Style>
+                            </Ellipse>
+                            <TextBlock Text="Sistema online" FontSize="13" Foreground="White" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding ClockTime}" FontSize="15" FontWeight="SemiBold"
+                                   Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <TextBlock Text="F" FontWeight="Bold" FontSize="12" Foreground="White" />
+                            <TextBlock Text=" H " FontWeight="Bold" FontSize="12" Foreground="#00D17E" />
+                            <TextBlock Text="T" FontWeight="Bold" FontSize="12" Foreground="#F15A29" />
+                            <TextBlock Text="  A C E S S O" FontSize="11" FontWeight="SemiBold" Foreground="White" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <!-- ===================== RECOGNITION ===================== -->
+            <Grid Visibility="{Binding IsCameraActive, Converter={StaticResource BoolToVis}}">
+                <Image Source="{Binding Preview}" Stretch="UniformToFill"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       RenderOptions.BitmapScalingMode="HighQuality" />
+                <Rectangle Fill="#73000000" />
+
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="56" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" HorizontalAlignment="Center" Margin="0,20,0,0">
+                        <Image Source="pack://application:,,,/Assets/logo-fht-acesso.png"
+                               Height="56" MaxWidth="220" Stretch="Uniform" HorizontalAlignment="Center"
+                               RenderOptions.BitmapScalingMode="HighQuality" />
+
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,12,0,0">
+                            <Rectangle Width="52" Height="1.5" Fill="#00D17E" VerticalAlignment="Center" />
+                            <TextBlock Text="MODO AUTOMÁTICO"
+                                       FontSize="12" FontWeight="Bold" Foreground="#00D17E"
+                                       Margin="12,0" VerticalAlignment="Center" />
+                            <Rectangle Width="52" Height="1.5" Fill="#00D17E" VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <TextBlock Text="RECONHECIMENTO EM ANDAMENTO"
+                                   FontSize="22" FontWeight="Bold" Foreground="White"
+                                   HorizontalAlignment="Center" TextAlignment="Center"
+                                   Margin="20,14,20,0" TextWrapping="Wrap" />
+
+                        <TextBlock Text="Posicione-se em frente à câmera"
+                                   FontSize="15" Foreground="#C8C8C8"
+                                   HorizontalAlignment="Center" Margin="0,6,0,0" />
+
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,12,0,0" VerticalAlignment="Center">
+                            <Ellipse Width="7" Height="7" Fill="#6A6A6A" Margin="5,0" VerticalAlignment="Center" />
+                            <Ellipse Width="11" Height="11" Fill="#00D17E" Margin="5,0" VerticalAlignment="Center" />
+                            <Ellipse Width="7" Height="7" Fill="#6A6A6A" Margin="5,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <TextBlock Text="Analisando rosto..."
+                                   FontSize="13" Foreground="#A8A8A8"
+                                   HorizontalAlignment="Center" Margin="0,6,0,4" />
+                    </StackPanel>
+
+                    <!-- Full camera behind; large viewfinder only (no inner crop / circle / rounded square) -->
+                    <Viewbox Grid.Row="1" Stretch="Uniform" Margin="16,0">
+                        <Grid Width="640" Height="640">
+                            <Path Stroke="#00D17E" StrokeThickness="10" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                  Data="M 48,168 L 48,48 L 168,48" />
+                            <Path Stroke="#00D17E" StrokeThickness="10" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                  Data="M 472,48 L 592,48 L 592,168" />
+                            <Path Stroke="#00D17E" StrokeThickness="10" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                  Data="M 48,472 L 48,592 L 168,592" />
+                            <Path Stroke="#00D17E" StrokeThickness="10" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                  Data="M 472,592 L 592,592 L 592,472" />
+                        </Grid>
+                    </Viewbox>
+
+                    <Border Grid.Row="2" Margin="32,4,32,10" Background="{StaticResource CardBg}"
+                            CornerRadius="14" Padding="16,14" BorderBrush="#22FFFFFF" BorderThickness="1">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,12">
+                                <Viewbox Width="22" Height="22" Margin="0,0,8,0">
+                                    <Canvas Width="48" Height="48">
+                                        <Path Stroke="#00D17E" StrokeThickness="3" Fill="Transparent"
+                                              Data="M14,10 H8 V16 M34,10 H40 V16 M14,38 H8 V32 M34,38 H40 V32" />
+                                        <Ellipse Canvas.Left="16" Canvas.Top="12" Width="16" Height="16"
+                                                 Stroke="#00D17E" StrokeThickness="3" />
+                                        <Path Stroke="#00D17E" StrokeThickness="3" Data="M14,36 C14,28 34,28 34,36" />
+                                    </Canvas>
+                                </Viewbox>
+                                <TextBlock Text="DICAS PARA UM MELHOR RECONHECIMENTO"
+                                           FontSize="14" FontWeight="SemiBold" Foreground="#00D17E"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                                    <Viewbox Width="42" Height="42" Margin="0,0,0,10">
+                                        <Canvas Width="48" Height="48">
+                                            <Path Stroke="White" StrokeThickness="2.4" Fill="Transparent"
+                                                  Data="M14,10 H8 V16 M34,10 H40 V16 M14,38 H8 V32 M34,38 H40 V32" />
+                                            <Ellipse Canvas.Left="16" Canvas.Top="12" Width="16" Height="16"
+                                                     Stroke="White" StrokeThickness="2.4" />
+                                            <Path Stroke="White" StrokeThickness="2.4" Data="M14,36 C14,28 34,28 34,36" />
+                                        </Canvas>
+                                    </Viewbox>
+                                    <TextBlock Text="Olhe para&#x0a;a câmera" FontSize="14" Foreground="White"
+                                               TextAlignment="Center" LineHeight="18" FontWeight="SemiBold" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                                    <Viewbox Width="42" Height="42" Margin="0,0,0,10">
+                                        <Canvas Width="48" Height="48">
+                                            <Ellipse Canvas.Left="14" Canvas.Top="16" Width="20" Height="20"
+                                                     Stroke="White" StrokeThickness="2.4" />
+                                            <Path Stroke="White" StrokeThickness="2.4"
+                                                  Data="M24,8 L24,14 M10,20 L6,16 M38,20 L42,16 M8,30 L4,32 M40,30 L44,32" />
+                                        </Canvas>
+                                    </Viewbox>
+                                    <TextBlock Text="Ambiente com&#x0a;boa iluminação" FontSize="14" Foreground="White"
+                                               TextAlignment="Center" LineHeight="18" FontWeight="SemiBold" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                                    <Viewbox Width="42" Height="42" Margin="0,0,0,10">
+                                        <Canvas Width="48" Height="48">
+                                            <Ellipse Canvas.Left="16" Canvas.Top="8" Width="16" Height="16"
+                                                     Stroke="White" StrokeThickness="2.4" />
+                                            <Path Stroke="White" StrokeThickness="2.4" Data="M12,40 C12,28 36,28 36,40" />
+                                        </Canvas>
+                                    </Viewbox>
+                                    <TextBlock Text="Apenas uma&#x0a;pessoa" FontSize="14" Foreground="White"
+                                               TextAlignment="Center" LineHeight="18" FontWeight="SemiBold" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="3" HorizontalAlignment="Center">
+                                    <Viewbox Width="42" Height="42" Margin="0,0,0,10">
+                                        <Canvas Width="48" Height="48">
+                                            <Ellipse Canvas.Left="8" Canvas.Top="8" Width="32" Height="32"
+                                                     Stroke="White" StrokeThickness="2.4" />
+                                            <Ellipse Canvas.Left="16" Canvas.Top="18" Width="4" Height="4" Fill="White" />
+                                            <Ellipse Canvas.Left="28" Canvas.Top="18" Width="4" Height="4" Fill="White" />
+                                            <Path Stroke="White" StrokeThickness="2.2" Data="M18,30 C20,34 28,34 30,30" />
+                                        </Canvas>
+                                    </Viewbox>
+                                    <TextBlock Text="Mantenha o rosto&#x0a;centralizado" FontSize="14" Foreground="White"
+                                               TextAlignment="Center" LineHeight="18" FontWeight="SemiBold" />
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Row="3" Margin="32,0,32,12" Background="{StaticResource CardBg}"
+                            CornerRadius="12" Padding="14,12" BorderBrush="#22FFFFFF" BorderThickness="1">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Viewbox Width="42" Height="42" Margin="0,0,14,0">
+                                <Canvas Width="48" Height="48">
+                                    <Ellipse Canvas.Left="6" Canvas.Top="6" Width="36" Height="36"
+                                             Stroke="#00D17E" StrokeThickness="3" />
+                                    <Ellipse Canvas.Left="16" Canvas.Top="16" Width="16" Height="16"
+                                             Stroke="#00D17E" StrokeThickness="2.4" />
+                                    <Ellipse Canvas.Left="21" Canvas.Top="21" Width="6" Height="6" Fill="#00D17E" />
+                                </Canvas>
+                            </Viewbox>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="Sistema inteligente de reconhecimento facial"
+                                           FontSize="15" FontWeight="SemiBold" Foreground="White" TextWrapping="Wrap" />
+                                <TextBlock Text="Aguarde! Em instantes você será identificado."
+                                           FontSize="14" Foreground="#9A9A9A" Margin="0,4,0,0" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Row="4" Background="{StaticResource FooterBg}">
+                        <Grid Margin="24,0">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Left">
+                                <Ellipse Width="9" Height="9" Margin="0,0,8,0" VerticalAlignment="Center">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="#555555" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsOnline}" Value="True">
+                                                    <Setter Property="Fill" Value="#00D17E" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+                                <TextBlock Text="Sistema online" FontSize="13" Foreground="White" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding ClockTime}" FontSize="15" FontWeight="SemiBold"
+                                       Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <TextBlock Text="F" FontWeight="Bold" FontSize="12" Foreground="White" />
+                                <TextBlock Text=" H " FontWeight="Bold" FontSize="12" Foreground="#00D17E" />
+                                <TextBlock Text="T" FontWeight="Bold" FontSize="12" Foreground="#F15A29" />
+                                <TextBlock Text="  A C E S S O" FontSize="11" FontWeight="SemiBold" Foreground="White" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Grid>
+
+            <!-- ===================== UNKNOWN ===================== -->
+            <Grid Visibility="{Binding IsUnknown, Converter={StaticResource BoolToVis}}" Background="#000000">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="56" />
+                </Grid.RowDefinitions>
+
+                <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="36,22,36,8">
+                        <Image Source="pack://application:,,,/Assets/logo-fht-acesso.png"
+                               Height="58" MaxWidth="220" Stretch="Uniform" HorizontalAlignment="Center"
+                               RenderOptions.BitmapScalingMode="HighQuality" />
+
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,14,0,0">
+                            <Rectangle Width="52" Height="1.5" Fill="#FF3B30" VerticalAlignment="Center" />
+                            <TextBlock Text="MODO AUTOMÁTICO" FontSize="12" FontWeight="Bold"
+                                       Foreground="#FF3B30" Margin="12,0" VerticalAlignment="Center" />
+                            <Rectangle Width="52" Height="1.5" Fill="#FF3B30" VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <TextBlock Text="NÃO RECONHECEMOS VOCÊ"
+                                   FontSize="26" FontWeight="Bold" Foreground="#FF3B30"
+                                   HorizontalAlignment="Center" TextAlignment="Center"
+                                   Margin="0,16,0,0" TextWrapping="Wrap" />
+                        <TextBlock Text="Não foi possível identificar seu rosto."
+                                   FontSize="15" Foreground="White"
+                                   HorizontalAlignment="Center" Margin="0,6,0,0" />
+
+                        <Image Source="pack://application:,,,/Assets/unknown-silhouette.png"
+                               Width="280" Height="280" Stretch="Uniform"
+                               HorizontalAlignment="Center" Margin="0,8,0,8"
+                               RenderOptions.BitmapScalingMode="HighQuality" />
+
+                        <TextBlock Text="Verifique sua posição, iluminação ou utilize uma das opções abaixo."
+                                   FontSize="15" Foreground="#E8E8E8" TextAlignment="Center"
+                                   TextWrapping="Wrap" Margin="4,0,4,14" FontWeight="SemiBold" />
+
+                        <Button Style="{StaticResource UnknownActionButton}"
+                                BorderBrush="#00D17E" Command="{Binding TryAgainCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <Grid Width="44" Height="44" Margin="0,0,16,0">
+                                    <TextBlock Text="&#xE72C;"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               FontSize="30"
+                                               Foreground="#00D17E"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Grid>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Tentar novamente" FontSize="18" FontWeight="SemiBold" Foreground="White" />
+                                    <TextBlock Text="(iluminação, posição ou outro ângulo)" FontSize="14" Foreground="#C8C8C8" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Style="{StaticResource UnknownActionButton}"
+                                BorderBrush="#00D17E" Command="{Binding EnrollFaceCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <Viewbox Width="40" Height="40" Margin="0,0,16,0">
+                                    <Canvas Width="48" Height="48">
+                                        <Path Stroke="White" StrokeThickness="2.6" Fill="Transparent"
+                                              Data="M14,10 H8 V16 M34,10 H40 V16 M14,38 H8 V32 M34,38 H40 V32" />
+                                        <Ellipse Canvas.Left="16" Canvas.Top="12" Width="16" Height="16"
+                                                 Stroke="White" StrokeThickness="2.6" />
+                                        <Path Stroke="White" StrokeThickness="2.6" Data="M14,36 C14,28 34,28 34,36" />
+                                    </Canvas>
+                                </Viewbox>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Cadastrar meu rosto" FontSize="18" FontWeight="SemiBold" Foreground="White" />
+                                    <TextBlock Text="(autoatendimento)" FontSize="14" Foreground="#C8C8C8" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Style="{StaticResource UnknownActionButton}"
+                                BorderBrush="#F15A29" Command="{Binding CallAttendantCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <Grid Width="44" Height="44" Margin="0,0,16,0">
+                                    <TextBlock Text="&#xE95B;"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               FontSize="30"
+                                               Foreground="#F15A29"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Grid>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Chamar atendente" FontSize="18" FontWeight="SemiBold" Foreground="#F15A29" />
+                                    <TextBlock Text="(cadastro assistido)" FontSize="14" Foreground="#F15A29" Opacity="0.9" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Style="{StaticResource UnknownActionButton}"
+                                BorderBrush="#C8C8C8" Command="{Binding EmergencyReleaseCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <Viewbox Width="40" Height="40" Margin="0,0,16,0">
+                                    <Canvas Width="48" Height="48">
+                                        <Ellipse Canvas.Left="8" Canvas.Top="8" Width="32" Height="32"
+                                                 Stroke="White" StrokeThickness="2.6" />
+                                        <Path Stroke="White" StrokeThickness="2.4"
+                                              Data="M24,16 L24,26 L30,30 M34,10 A 14,14 0 0 1 38,18" />
+                                    </Canvas>
+                                </Viewbox>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Liberação por urgência" FontSize="18" FontWeight="SemiBold" Foreground="White" />
+                                    <TextBlock Text="(acesso temporário)" FontSize="14" Foreground="#C8C8C8" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Button>
+
+                        <Border Background="#141414" CornerRadius="12" Padding="14,14" Margin="0,6,0,10"
+                                BorderBrush="#22FFFFFF" BorderThickness="1">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,12">
+                                    <Viewbox Width="22" Height="22" Margin="0,0,8,0">
+                                        <Canvas Width="48" Height="48">
+                                            <Ellipse Canvas.Left="12" Canvas.Top="6" Width="24" Height="26"
+                                                     Stroke="#FF3B30" StrokeThickness="3" />
+                                            <Path Stroke="#FF3B30" StrokeThickness="3"
+                                                  Data="M18,32 L18,36 H30 L30,32 M20,40 H28" />
+                                        </Canvas>
+                                    </Viewbox>
+                                    <TextBlock Text="DICAS PARA UM MELHOR RECONHECIMENTO"
+                                               FontSize="13" FontWeight="SemiBold" Foreground="#FF3B30"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                                        <Viewbox Width="38" Height="38" Margin="0,0,0,8">
+                                            <Canvas Width="48" Height="48">
+                                                <Ellipse Canvas.Left="14" Canvas.Top="16" Width="20" Height="20"
+                                                         Stroke="#FF3B30" StrokeThickness="2.4" />
+                                                <Path Stroke="#FF3B30" StrokeThickness="2.4"
+                                                      Data="M24,8 L24,14 M10,20 L6,16 M38,20 L42,16" />
+                                            </Canvas>
+                                        </Viewbox>
+                                        <TextBlock Text="Ambiente com boa iluminação" FontSize="13"
+                                                   Foreground="White" TextAlignment="Center" TextWrapping="Wrap"
+                                                   FontWeight="SemiBold" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                                        <Viewbox Width="38" Height="38" Margin="0,0,0,8">
+                                            <Canvas Width="48" Height="48">
+                                                <Path Stroke="#FF3B30" StrokeThickness="2.4" Fill="Transparent"
+                                                      Data="M14,10 H8 V16 M34,10 H40 V16 M14,38 H8 V32 M34,38 H40 V32" />
+                                                <Ellipse Canvas.Left="16" Canvas.Top="12" Width="16" Height="16"
+                                                         Stroke="#FF3B30" StrokeThickness="2.4" />
+                                            </Canvas>
+                                        </Viewbox>
+                                        <TextBlock Text="Olhe diretamente para a câmera" FontSize="13"
+                                                   Foreground="White" TextAlignment="Center" TextWrapping="Wrap"
+                                                   FontWeight="SemiBold" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                                        <Viewbox Width="38" Height="38" Margin="0,0,0,8">
+                                            <Canvas Width="48" Height="48">
+                                                <Ellipse Canvas.Left="8" Canvas.Top="8" Width="32" Height="32"
+                                                         Stroke="#FF3B30" StrokeThickness="2.4" />
+                                                <Path Stroke="#FF3B30" StrokeThickness="2.2" Data="M18,30 C20,34 28,34 30,30" />
+                                            </Canvas>
+                                        </Viewbox>
+                                        <TextBlock Text="Mantenha o rosto desobstruído" FontSize="13"
+                                                   Foreground="White" TextAlignment="Center" TextWrapping="Wrap"
+                                                   FontWeight="SemiBold" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="3" HorizontalAlignment="Center">
+                                        <Viewbox Width="38" Height="38" Margin="0,0,0,8">
+                                            <Canvas Width="48" Height="48">
+                                                <Ellipse Canvas.Left="16" Canvas.Top="8" Width="16" Height="16"
+                                                         Stroke="#FF3B30" StrokeThickness="2.4" />
+                                                <Path Stroke="#FF3B30" StrokeThickness="2.4"
+                                                      Data="M12,42 C12,28 36,28 36,42 M14,22 L8,18 M34,22 L40,18" />
+                                            </Canvas>
+                                        </Viewbox>
+                                        <TextBlock Text="Evite bonés, óculos escuros e máscaras" FontSize="13"
+                                                   Foreground="White" TextAlignment="Center" TextWrapping="Wrap"
+                                                   FontWeight="SemiBold" />
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <Border Grid.Row="1" Background="{StaticResource FooterBg}">
+                    <Grid Margin="24,0">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Left">
+                            <Ellipse Width="9" Height="9" Margin="0,0,8,0" VerticalAlignment="Center">
+                                <Ellipse.Style>
+                                    <Style TargetType="Ellipse">
+                                        <Setter Property="Fill" Value="#555555" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsOnline}" Value="True">
+                                                <Setter Property="Fill" Value="#00D17E" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Ellipse.Style>
+                            </Ellipse>
+                            <TextBlock Text="Sistema online" FontSize="13" Foreground="White" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding ClockTime}" FontSize="15" FontWeight="SemiBold"
+                                   Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <TextBlock Text="F" FontWeight="Bold" FontSize="12" Foreground="White" />
+                            <TextBlock Text=" H " FontWeight="Bold" FontSize="12" Foreground="#00D17E" />
+                            <TextBlock Text="T" FontWeight="Bold" FontSize="12" Foreground="#F15A29" />
+                            <TextBlock Text="  A C E S S O" FontSize="11" FontWeight="SemiBold" Foreground="White" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <!-- ===================== AUTHORIZED / DENIED ===================== -->
+            <Grid Visibility="{Binding IsPositiveResult, Converter={StaticResource BoolToVis}}">
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="64,0">
+                    <Image Source="pack://application:,,,/Assets/logo-fht-acesso.png"
+                           Height="70" MaxWidth="260" Stretch="Uniform" HorizontalAlignment="Center"
+                           Margin="0,0,0,64" RenderOptions.BitmapScalingMode="HighQuality" />
+                    <Grid Width="180" Height="180" HorizontalAlignment="Center">
+                        <Ellipse Width="180" Height="180" Stroke="#00D17E" StrokeThickness="4" Fill="#0C2018" />
+                        <Path StrokeThickness="10" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                              Stroke="#00D17E" Data="M 52,92 L 76,116 L 128,64" />
+                    </Grid>
+                    <TextBlock Text="{Binding ResultMessage}" FontSize="36" FontWeight="SemiBold"
+                               Foreground="#00D17E" TextAlignment="Center" TextWrapping="Wrap"
+                               HorizontalAlignment="Center" Margin="0,56,0,0" />
+                </StackPanel>
+            </Grid>
+
+            <Grid Visibility="{Binding IsDeniedResult, Converter={StaticResource BoolToVis}}">
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="64,0">
+                    <Image Source="pack://application:,,,/Assets/logo-fht-acesso.png"
+                           Height="70" MaxWidth="260" Stretch="Uniform" HorizontalAlignment="Center"
+                           Margin="0,0,0,64" RenderOptions.BitmapScalingMode="HighQuality" />
+                    <Grid Width="180" Height="180" HorizontalAlignment="Center">
+                        <Ellipse Width="180" Height="180" Stroke="#F15A29" StrokeThickness="4" Fill="#1A0F0A" />
+                        <TextBlock Text="!" FontSize="96" FontWeight="SemiBold" Foreground="#F15A29"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+                    <TextBlock Text="{Binding ResultMessage}" FontSize="36" FontWeight="SemiBold"
+                               Foreground="White" TextAlignment="Center" TextWrapping="Wrap"
+                               HorizontalAlignment="Center" Margin="0,56,0,0" />
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Viewbox>
+</UserControl>

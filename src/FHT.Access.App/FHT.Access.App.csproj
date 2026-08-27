@@ -1,0 +1,51 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\FHT.Access.Domain\FHT.Access.Domain.csproj" />
+    <ProjectReference Include="..\FHT.Access.Application\FHT.Access.Application.csproj" />
+    <ProjectReference Include="..\FHT.Access.Infrastructure\FHT.Access.Infrastructure.csproj" />
+    <ProjectReference Include="..\FHT.Access.Face\FHT.Access.Face.csproj" />
+    <ProjectReference Include="..\FHT.Access.Toletus\FHT.Access.Toletus.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    <PackageReference Include="OpenCvSharp4" Version="4.10.0.20240616" />
+    <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.10.0.20240616" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\logo-fht-acesso.png" />
+    <Resource Include="Assets\propaganda-idle.png" />
+    <Resource Include="Assets\tray-icon.png" />
+    <Resource Include="Assets\app.ico" />
+    <Resource Include="Assets\unknown-silhouette.png" />
+    <Content Include="Assets\idle-bg.png" Condition="Exists('Assets\idle-bg.png')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\FHT.Access.Face\models\*.onnx" Link="models\%(Filename)%(Extension)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\FHT.Access.Face\models\*.xml" Link="models\%(Filename)%(Extension)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!-- WinForms is used only by the tray icon; its implicit usings clash with WPF types. -->
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+  </PropertyGroup>
+
+</Project>

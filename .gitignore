@@ -1,0 +1,44 @@
+## Build
+bin/
+obj/
+[Bb]uild/
+[Ll]og/
+[Ll]ogs/
+*.user
+*.userosscache
+*.suo
+*.rsuser
+.vs/
+*.DotSettings.user
+
+## NuGet
+*.nupkg
+**/packages/*
+!**/packages/build/
+
+## IDE / OS
+.idea/
+*.swp
+Thumbs.db
+Desktop.ini
+
+## App local data (if ever copied into repo)
+**/appsettings.local.json
+**/*.db
+**/*.db-shm
+**/*.db-wal
+
+## Vendor build artifacts (LiteNet3)
+vendor/**/bin/
+vendor/**/obj/
+vendor/**/*.user
+
+## Test / coverage
+TestResults/
+coverage*
+*.coverage
+*.coveragexml
+
+## Publish
+publish/
+artifacts/

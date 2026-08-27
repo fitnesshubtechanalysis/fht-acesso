@@ -1,0 +1,199 @@
+<UserControl x:Class="FHT.Access.App.Views.AdminShellView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{StaticResource BackgroundBrush}">
+    <DockPanel Margin="16">
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12" LastChildFill="False">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="FHT" Foreground="{StaticResource FhtOrangeBrush}" FontSize="22" FontWeight="SemiBold" />
+                <TextBlock Text="  Acesso — Admin" Foreground="{StaticResource TextMutedBrush}" FontSize="16" VerticalAlignment="Center" />
+            </StackPanel>
+            <Button Content="Modo Aluno"
+                    Style="{StaticResource QuietButton}"
+                    Command="{Binding ReturnToKioskCommand}"
+                    DockPanel.Dock="Right"
+                    HorizontalAlignment="Right" />
+        </DockPanel>
+
+        <TextBlock DockPanel.Dock="Bottom"
+                   Text="{Binding StatusMessage}"
+                   Style="{StaticResource MutedText}"
+                   Margin="0,8,0,0" />
+
+        <TabControl Style="{StaticResource AdminTabControl}">
+            <!-- Geral -->
+            <TabItem Header="Geral">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel MaxWidth="520" HorizontalAlignment="Left">
+                        <TextBlock Text="Nome do dispositivo" Style="{StaticResource SectionLabel}" />
+                        <TextBox Text="{Binding DeviceName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource QuietTextBox}" />
+                        <TextBlock Text="Unit Id" Style="{StaticResource SectionLabel}" />
+                        <TextBox Text="{Binding UnitId, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource QuietTextBox}" />
+                        <TextBlock Text="Admin PIN" Style="{StaticResource SectionLabel}" />
+                        <TextBox Text="{Binding AdminPin, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource QuietTextBox}" />
+                        <CheckBox Content="Kiosk portrait" IsChecked="{Binding KioskPortrait}" Style="{StaticResource QuietCheckBox}" />
+                        <Button Content="Salvar" Style="{StaticResource QuietButton}" Command="{Binding SaveGeralCommand}" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- Gestão -->
+            <TabItem Header="Gestão">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel MaxWidth="560" HorizontalAlignment="Left">
+                        <TextBlock Text="Base URL da API Gestão" Style="{StaticResource SectionLabel}" />
+                        <TextBox Text="{Binding GestaoBaseUrl, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource QuietTextBox}"
+                                 ToolTip="Origem da API, sem /api/v1. Ex.: http://localhost:4010" />
+                        <TextBlock Text="Ex.: http://localhost:4010  (não coloque /api/v1)"
+                                   Style="{StaticResource MutedText}"
+                                   Margin="0,4,0,8" />
+                        <TextBlock Text="Device Id" Style="{StaticResource SectionLabel}" />
+                        <TextBox Text="{Binding DeviceId, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource QuietTextBox}" />
+                        <TextBlock Text="Device Secret" Style="{StaticResource SectionLabel}" />
+                        <TextBox Text="{Binding DeviceSecret, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource QuietTextBox}" />
+                        <WrapPanel>
+                            <Button Content="Test Auth" Style="{StaticResource QuietButton}" Command="{Binding TestAuthCommand}" />
+                            <Button Content="Sync Members Now" Style="{StaticResource QuietButton}" Command="{Binding SyncMembersCommand}" />
+                        </WrapPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- Webcam -->
+            <TabItem Header="Webcam">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="280" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="Camera index" Style="{StaticResource SectionLabel}" />
+                        <TextBox Text="{Binding WebcamIndex, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource QuietTextBox}" />
+                        <WrapPanel>
+                            <Button Content="Start" Style="{StaticResource QuietButton}" Command="{Binding StartWebcamCommand}" />
+                            <Button Content="Stop" Style="{StaticResource QuietButton}" Command="{Binding StopWebcamCommand}" />
+                            <Button Content="Capture still" Style="{StaticResource QuietButton}" Command="{Binding CaptureStillCommand}" />
+                        </WrapPanel>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Margin="16,0,0,0">
+                        <TextBlock Text="Preview" Style="{StaticResource SectionLabel}" />
+                        <Border Width="320" Height="240" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="1">
+                            <Image Source="{Binding WebcamPreview}" Stretch="Uniform" />
+                        </Border>
+                        <TextBlock Text="Still" Style="{StaticResource SectionLabel}" Margin="0,12,0,4" />
+                        <Border Width="160" Height="120" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderSubtleBrush}" BorderThickness="1" HorizontalAlignment="Left">
+                            <Image Source="{Binding StillPreview}" Stretch="Uniform" />
+                        </Border>
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+
+            <!-- Face -->
+            <TabItem Header="Face">
+                <StackPanel MaxWidth="560" HorizontalAlignment="Left">
+                    <TextBlock Text="Aluno" Style="{StaticResource SectionLabel}" />
+                    <ComboBox ItemsSource="{Binding Members}"
+                              SelectedItem="{Binding SelectedMember}"
+                              Style="{StaticResource QuietComboBox}"
+                              DisplayMemberPath="Name" />
+                    <TextBlock Text="Threshold" Style="{StaticResource SectionLabel}" />
+                    <TextBox Text="{Binding FaceThreshold, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource QuietTextBox}" />
+                    <WrapPanel>
+                        <Button Content="Enroll selected" Style="{StaticResource QuietButton}" Command="{Binding EnrollCommand}" />
+                        <Button Content="Identify test" Style="{StaticResource QuietButton}" Command="{Binding IdentifyTestCommand}" />
+                    </WrapPanel>
+                    <TextBlock Text="{Binding FaceStatus}" Style="{StaticResource MutedText}" Margin="0,8,0,0" />
+                </StackPanel>
+            </TabItem>
+
+            <!-- Catraca (Marco §68) -->
+            <TabItem Header="Catraca">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="320" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <CheckBox Content="UseFake" IsChecked="{Binding UseFakeTurnstile}" Style="{StaticResource QuietCheckBox}" />
+                        <TextBlock Text="Network" Style="{StaticResource SectionLabel}" />
+                        <TextBox Text="{Binding TurnstileNetwork, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource QuietTextBox}" />
+                        <TextBlock Text="IP" Style="{StaticResource SectionLabel}" />
+                        <TextBox Text="{Binding TurnstileIp, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource QuietTextBox}" />
+                        <TextBlock Text="Serial" Style="{StaticResource SectionLabel}" />
+                        <TextBox Text="{Binding TurnstileSerial, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource QuietTextBox}" />
+                        <WrapPanel>
+                            <Button Content="Connect" Style="{StaticResource QuietButton}" Command="{Binding ConnectTurnstileCommand}" />
+                            <Button Content="Disconnect" Style="{StaticResource QuietButton}" Command="{Binding DisconnectTurnstileCommand}" />
+                        </WrapPanel>
+                        <WrapPanel>
+                            <Button Content="Liberar Entrada" Style="{StaticResource QuietButton}" Command="{Binding ReleaseEntryCommand}" />
+                            <Button Content="Liberar Saída" Style="{StaticResource QuietButton}" Command="{Binding ReleaseExitCommand}" />
+                        </WrapPanel>
+                        <TextBlock Margin="0,8,0,0">
+                            <Run Text="State: " Foreground="{StaticResource TextMutedBrush}" />
+                            <Run Text="{Binding TurnstileStateText, Mode=OneWay}" Foreground="{StaticResource FhtOrangeBrush}" />
+                        </TextBlock>
+                    </StackPanel>
+                    <DockPanel Grid.Column="1" Margin="16,0,0,0">
+                        <TextBlock DockPanel.Dock="Top" Text="Passage log" Style="{StaticResource SectionLabel}" />
+                        <ListBox ItemsSource="{Binding PassageLog}"
+                                 Background="{StaticResource SurfaceBrush}"
+                                 Foreground="{StaticResource TextPrimaryBrush}"
+                                 BorderBrush="{StaticResource BorderSubtleBrush}" />
+                    </DockPanel>
+                </Grid>
+            </TabItem>
+
+            <!-- Sync -->
+            <TabItem Header="Sync">
+                <StackPanel MaxWidth="480" HorizontalAlignment="Left">
+                    <TextBlock>
+                        <Run Text="Pending: " Foreground="{StaticResource TextMutedBrush}" />
+                        <Run Text="{Binding PendingCount, Mode=OneWay}" />
+                    </TextBlock>
+                    <TextBlock Margin="0,8,0,0">
+                        <Run Text="Last members sync: " Foreground="{StaticResource TextMutedBrush}" />
+                        <Run Text="{Binding LastMembersSync, Mode=OneWay}" />
+                    </TextBlock>
+                    <TextBlock Margin="0,4,0,12">
+                        <Run Text="Last events sync: " Foreground="{StaticResource TextMutedBrush}" />
+                        <Run Text="{Binding LastEventsSync, Mode=OneWay}" />
+                    </TextBlock>
+                    <WrapPanel>
+                        <Button Content="Flush pending" Style="{StaticResource QuietButton}" Command="{Binding FlushPendingCommand}" />
+                        <Button Content="Refresh" Style="{StaticResource QuietButton}" Command="{Binding RefreshSyncCommand}" />
+                    </WrapPanel>
+                </StackPanel>
+            </TabItem>
+
+            <!-- Rede -->
+            <TabItem Header="Rede">
+                <StackPanel MaxWidth="560">
+                    <TextBlock Text="{Binding NetworkNote}" TextWrapping="Wrap" Style="{StaticResource MutedText}" />
+                    <TextBlock Margin="0,16,0,0" Style="{StaticResource SectionLabel}" Text="Base URL" />
+                    <TextBlock Text="{Binding GestaoBaseUrl}" TextWrapping="Wrap" />
+                </StackPanel>
+            </TabItem>
+
+            <!-- Diagnóstico -->
+            <TabItem Header="Diagnóstico">
+                <DockPanel>
+                    <Button DockPanel.Dock="Top"
+                            Content="Atualizar logs"
+                            Style="{StaticResource QuietButton}"
+                            Command="{Binding RefreshDiagnosticsCommand}"
+                            HorizontalAlignment="Left" />
+                    <TextBox Text="{Binding LogTail, Mode=OneWay}"
+                             IsReadOnly="True"
+                             TextWrapping="Wrap"
+                             AcceptsReturn="True"
+                             VerticalScrollBarVisibility="Auto"
+                             Style="{StaticResource QuietTextBox}"
+                             FontFamily="Consolas"
+                             FontSize="12" />
+                </DockPanel>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</UserControl>

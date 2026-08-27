@@ -1,0 +1,32 @@
+﻿<Window x:Class="FHT.Access.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:FHT.Access.App.ViewModels"
+        xmlns:views="clr-namespace:FHT.Access.App.Views"
+        Title="FHT Acesso"
+        Icon="pack://application:,,,/Assets/app.ico"
+        WindowState="Maximized"
+        WindowStyle="None"
+        Background="{StaticResource BackgroundBrush}"
+        KeyDown="Window_KeyDown"
+        Closing="Window_Closing">
+    <Window.Resources>
+        <DataTemplate DataType="{x:Type vm:PublicKioskViewModel}">
+            <views:PublicKioskView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:AttendantShellViewModel}">
+            <views:AttendantShellView />
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid>
+        <ContentControl Content="{Binding CurrentViewModel}" />
+
+        <!-- Corner tap hot-zone (bottom-right) opens the attendant login -->
+        <Border Width="48" Height="48"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Bottom"
+                Background="Transparent"
+                MouseLeftButtonDown="AttendantCorner_Click" />
+    </Grid>
+</Window>
