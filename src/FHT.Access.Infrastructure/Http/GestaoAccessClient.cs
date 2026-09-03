@@ -125,7 +125,9 @@ public sealed class GestaoAccessClient : IGestaoAccessClient
             visitId = e.VisitId,
             occurredAt = e.OccurredAt,
             source = e.Source,
-            deviceId = e.DeviceId,
+            deviceId = string.IsNullOrWhiteSpace(e.DeviceId) || !Guid.TryParse(e.DeviceId, out _)
+                ? null
+                : e.DeviceId,
             denialReason = e.DenialReason
         }).ToList();
 

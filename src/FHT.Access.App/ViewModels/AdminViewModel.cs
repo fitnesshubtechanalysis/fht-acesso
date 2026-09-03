@@ -43,14 +43,22 @@ public sealed class AdminViewModel : ViewModelBase, IDisposable
     private string _unitId = string.Empty;
     private string _adminPin = "1234";
     private bool _kioskPortrait = true;
+    private bool _startWithWindows;
     private string _gestaoBaseUrl = string.Empty;
     private string _deviceId = string.Empty;
     private string _deviceSecret = string.Empty;
     private int _webcamIndex;
+    private int _webcamIndexExit = -1;
+    private string _exitMode = "free";
+    private bool _freeGateMode;
+    private bool _cameraFlipHorizontal;
+    private bool _cameraFlipVertical;
+    private int _cameraRotateDegrees;
     private BitmapSource? _webcamPreview;
     private BitmapSource? _stillPreview;
     private double _faceThreshold = 0.92;
     private MemberOption? _selectedMember;
+    private bool _selectedMemberHasFace;
     private string _faceStatus = string.Empty;
     private bool _useFakeTurnstile = true;
     private string _turnstileNetwork = string.Empty;
@@ -109,6 +117,7 @@ public sealed class AdminViewModel : ViewModelBase, IDisposable
         StopWebcamCommand = new RelayCommand(StopWebcam);
         CaptureStillCommand = new RelayCommand(CaptureStill);
         EnrollCommand = new AsyncRelayCommand(EnrollAsync);
+        RemoveFaceCommand = new AsyncRelayCommand(RemoveFaceAsync);
         IdentifyTestCommand = new AsyncRelayCommand(IdentifyTestAsync);
         ConnectTurnstileCommand = new AsyncRelayCommand(ConnectTurnstileAsync);
         DisconnectTurnstileCommand = new AsyncRelayCommand(DisconnectTurnstileAsync);
@@ -141,6 +150,7 @@ public sealed class AdminViewModel : ViewModelBase, IDisposable
     public RelayCommand StopWebcamCommand { get; }
     public RelayCommand CaptureStillCommand { get; }
     public AsyncRelayCommand EnrollCommand { get; }
+    public AsyncRelayCommand RemoveFaceCommand { get; }
     public AsyncRelayCommand IdentifyTestCommand { get; }
     public AsyncRelayCommand ConnectTurnstileCommand { get; }
     public AsyncRelayCommand DisconnectTurnstileCommand { get; }
@@ -175,6 +185,12 @@ public sealed class AdminViewModel : ViewModelBase, IDisposable
         set => SetProperty(ref _kioskPortrait, value);
     }
 
+    public bool StartWithWindows
+    {
+        get => _startWithWindows;
+        set => SetProperty(ref _startWithWindows, value);
+    }
+
     public string GestaoBaseUrl
     {
         get => _gestaoBaseUrl;
@@ -203,6 +219,45 @@ public sealed class AdminViewModel : ViewModelBase, IDisposable
         set => SetProperty(ref _webcamIndex, value);
     }
 
+    /// <summary>Second camera index for exit lane (-1 = disabled).</summary>
+    public int WebcamIndexExit
+    {
+        get => _webcamIndexExit;
+        set => SetProperty(ref _webcamIndexExit, value);
+    }
+
+    /// <summary>Exit control: "free" or "facial" (requires second camera).</summary>
+    public string ExitMode
+    {
+        get => _exitMode;
+        set => SetProperty(ref _exitMode, value);
+    }
+
+    /// <summary>Catraca livre: registra facial sem validar já-dentro / sem-entrada.</summary>
+    public bool FreeGateMode
+    {
+        get => _freeGateMode;
+        set => SetProperty(ref _freeGateMode, value);
+    }
+
+    public bool CameraFlipHorizontal
+    {
+        get => _cameraFlipHorizontal;
+        set => SetProperty(ref _cameraFlipHorizontal, value);
+    }
+
+    public bool CameraFlipVertical
+    {
+        get => _cameraFlipVertical;
+        set => SetProperty(ref _cameraFlipVertical, value);
+    }
+
+    public int CameraRotateDegrees
+    {
+        get => _cameraRotateDegrees;
+        set => SetProperty(ref _cameraRotateDegrees, value);
+    }
+
     public BitmapSource? WebcamPreview
     {
         get => _webcamPreview;
@@ -224,7 +279,18 @@ public sealed class AdminViewModel : ViewModelBase, IDisposable
     public MemberOption? SelectedMember
     {
         get => _selectedMember;
-        set => SetProperty(ref _selectedMember, value);
+        set
+        {
+            if (!SetProperty(ref _selectedMember, value))
+                return;
+            _ = RefreshSelectedMemberFaceStatusAsync();
+        }
+    }
+
+    public bool SelectedMemberHasFace
+    {
+        get => _selectedMemberHasFace;
+        private set => SetProperty(ref _selectedMemberHasFace, value);
     }
 
     public string FaceStatus
@@ -319,10 +385,17 @@ public sealed class AdminViewModel : ViewModelBase, IDisposable
         UnitId = _settings.UnitId;
         AdminPin = string.IsNullOrWhiteSpace(_settings.AdminPin) ? "1234" : _settings.AdminPin;
         KioskPortrait = _settings.KioskPortrait;
+        StartWithWindows = _settings.StartWithWindows;
         GestaoBaseUrl = _settings.GestaoBaseUrl;
         DeviceId = _settings.DeviceId;
         DeviceSecret = _settings.DeviceSecret;
         WebcamIndex = _settings.WebcamIndex;
+        WebcamIndexExit = _settings.WebcamIndexExit;
+        ExitMode = string.IsNullOrWhiteSpace(_settings.ExitMode) ? "free" : _settings.ExitMode;
+        FreeGateMode = _settings.FreeGateMode;
+        CameraFlipHorizontal = _settings.CameraFlipHorizontal;
+        CameraFlipVertical = _settings.CameraFlipVertical;
+        CameraRotateDegrees = _settings.CameraRotateDegrees;
         FaceThreshold = _settings.FaceMatchThreshold;
         UseFakeTurnstile = _settings.UseFakeTurnstile;
         TurnstileNetwork = _settings.TurnstileNetwork;
@@ -338,10 +411,18 @@ public sealed class AdminViewModel : ViewModelBase, IDisposable
             _settings.UnitId = UnitId.Trim();
             _settings.AdminPin = AdminPin;
             _settings.KioskPortrait = KioskPortrait;
+            _settings.StartWithWindows = StartWithWindows;
             _settings.GestaoBaseUrl = GestaoBaseUrl.Trim();
             _settings.DeviceId = DeviceId.Trim();
             _settings.DeviceSecret = DeviceSecret;
             _settings.WebcamIndex = WebcamIndex;
+            _settings.WebcamIndexExit = WebcamIndexExit;
+            _settings.ExitMode = string.IsNullOrWhiteSpace(ExitMode) ? "free" : ExitMode.Trim();
+            _settings.FreeGateMode = FreeGateMode;
+            _flow.FreeGateMode = FreeGateMode;
+            _settings.CameraFlipHorizontal = CameraFlipHorizontal;
+            _settings.CameraFlipVertical = CameraFlipVertical;
+            _settings.CameraRotateDegrees = CameraRotateDegrees;
             _settings.FaceMatchThreshold = FaceThreshold;
             _settings.UseFakeTurnstile = UseFakeTurnstile;
             _settings.TurnstileNetwork = TurnstileNetwork.Trim();
@@ -367,6 +448,18 @@ public sealed class AdminViewModel : ViewModelBase, IDisposable
             }).ConfigureAwait(true);
 
             await _store.SaveAppSettingsAsync(_settings).ConfigureAwait(true);
+
+            try
+            {
+                var exe = Environment.ProcessPath;
+                if (!string.IsNullOrWhiteSpace(exe))
+                    WindowsStartupHelper.Apply(StartWithWindows, exe);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Falha ao gravar início com Windows: {ex.Message}");
+            }
+
             StatusMessage = "Configurações salvas.";
             _logger.Information("Admin settings saved.");
             UpdateNetworkNote();
@@ -483,12 +576,43 @@ public sealed class AdminViewModel : ViewModelBase, IDisposable
                     .ConfigureAwait(true);
             }
 
-            FaceStatus = $"Enrolled: {SelectedMember.Name}";
+            FaceStatus = $"Facial cadastrada: {SelectedMember.Name}";
+            SelectedMemberHasFace = true;
             _logger.Information($"Face enrolled for {SelectedMember.Id}");
         }
         catch (Exception ex)
         {
             FaceStatus = $"Enroll falhou: {ex.Message}";
+            _logger.Error(ex.Message);
+        }
+    }
+
+    private async Task RemoveFaceAsync()
+    {
+        if (SelectedMember is null)
+        {
+            FaceStatus = "Selecione um aluno.";
+            return;
+        }
+
+        try
+        {
+            var existing = await _members.GetFaceAsync(SelectedMember.Id).ConfigureAwait(true);
+            if (existing is null)
+            {
+                FaceStatus = $"{SelectedMember.Name} não tem facial cadastrada.";
+                SelectedMemberHasFace = false;
+                return;
+            }
+
+            await _recognition.RemoveAsync(SelectedMember.Id).ConfigureAwait(true);
+            FaceStatus = $"Facial removida: {SelectedMember.Name}";
+            SelectedMemberHasFace = false;
+            _logger.Information($"Face removed for {SelectedMember.Id}");
+        }
+        catch (Exception ex)
+        {
+            FaceStatus = $"Remoção falhou: {ex.Message}";
             _logger.Error(ex.Message);
         }
     }
@@ -617,10 +741,34 @@ public sealed class AdminViewModel : ViewModelBase, IDisposable
     {
         try
         {
-            var n = await _offlineSync.FlushAsync(UnitId.Trim()).ConfigureAwait(true);
+            if (!string.IsNullOrWhiteSpace(DeviceId) && !string.IsNullOrWhiteSpace(DeviceSecret))
+            {
+                await _gestao
+                    .EnsureAuthenticatedAsync(DeviceId.Trim(), DeviceSecret.Trim())
+                    .ConfigureAwait(true);
+            }
+
+            var n = 0;
             var photos = 0;
-            if (!string.IsNullOrWhiteSpace(UnitId))
-                photos = await _photoSync.FlushAsync(UnitId.Trim()).ConfigureAwait(true);
+            try
+            {
+                n = await _offlineSync.FlushAsync(UnitId.Trim()).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Flush eventos: {ex.Message}");
+            }
+
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(UnitId))
+                    photos = await _photoSync.FlushAsync(UnitId.Trim()).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Flush fotos: {ex.Message}");
+            }
+
             StatusMessage = $"Flush: {n} evento(s), {photos} foto(s).";
             _kiosk.SetOnline(true);
             await RefreshSyncAsync().ConfigureAwait(true);
@@ -688,6 +836,20 @@ public sealed class AdminViewModel : ViewModelBase, IDisposable
 
         if (SelectedMember is null && Members.Count > 0)
             SelectedMember = Members[0];
+        else
+            await RefreshSelectedMemberFaceStatusAsync().ConfigureAwait(true);
+    }
+
+    private async Task RefreshSelectedMemberFaceStatusAsync()
+    {
+        if (SelectedMember is null)
+        {
+            SelectedMemberHasFace = false;
+            return;
+        }
+
+        var face = await _members.GetFaceAsync(SelectedMember.Id).ConfigureAwait(true);
+        SelectedMemberHasFace = face is not null;
     }
 
     private async Task ApplyGestaoUrlToSettingsAsync()

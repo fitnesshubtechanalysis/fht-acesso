@@ -32,19 +32,46 @@ public sealed class PendingSyncRepository : IPendingSyncRepository
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<PendingSync>> GetPendingAsync(
+    public Task<IReadOnlyList<PendingSync>> GetPendingAsync(
         int take = 100,
         CancellationToken cancellationToken = default)
+        => QueryAsync(kind: null, take, cancellationToken);
+
+    public Task<IReadOnlyList<PendingSync>> GetPendingByKindAsync(
+        string kind,
+        int take = 100,
+        CancellationToken cancellationToken = default)
+        => QueryAsync(kind, take, cancellationToken);
+
+    private async Task<IReadOnlyList<PendingSync>> QueryAsync(
+        string? kind,
+        int take,
+        CancellationToken cancellationToken)
     {
         await using var connection = await _factory.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT Id, Kind, PayloadJson, CreatedAt, Attempts, LastError
-            FROM PendingSync
-            ORDER BY CreatedAt
-            LIMIT $take;
-            """;
-        command.Parameters.AddWithValue("$take", take);
+        if (string.IsNullOrWhiteSpace(kind))
+        {
+            command.CommandText = """
+                SELECT Id, Kind, PayloadJson, CreatedAt, Attempts, LastError
+                FROM PendingSync
+                ORDER BY CreatedAt
+                LIMIT $take;
+                """;
+        }
+        else
+        {
+            command.CommandText = """
+                SELECT Id, Kind, PayloadJson, CreatedAt, Attempts, LastError
+                FROM PendingSync
+                WHERE Kind = $kind
+                ORDER BY CreatedAt
+                LIMIT $take;
+                """;
+            command.Parameters.AddWithValue("$kind", kind);
+        }
+
+        command.Parameters.AddWithValue("$take", Math.Clamp(take, 1, 500));
 
         var list = new List<PendingSync>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);

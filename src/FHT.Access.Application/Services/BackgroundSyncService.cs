@@ -105,11 +105,38 @@ public sealed class BackgroundSyncService : IAsyncDisposable
                     .EnsureAuthenticatedAsync(_device.DeviceId.Trim(), _device.DeviceSecret, ct)
                     .ConfigureAwait(false);
             }
+        }
+        catch (Exception ex)
+        {
+            _log?.Warning($"Auto-sync auth falhou: {ex.Message}");
+            return;
+        }
 
-            var flushed = await _events.FlushAsync(unitId, ct).ConfigureAwait(false);
-            var photos = await _photos.FlushAsync(unitId, ct).ConfigureAwait(false);
-            var pulled = await _members.SyncAsync(unitId, ct).ConfigureAwait(false);
-            _log?.Information($"Auto-sync: {pulled} aluno(s), {flushed} evento(s), {photos} foto(s).");
+        var flushed = 0;
+        var photos = 0;
+        var pulled = 0;
+
+        try
+        {
+            flushed = await _events.FlushAsync(unitId, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _log?.Warning($"Auto-sync eventos falhou: {ex.Message}");
+        }
+
+        try
+        {
+            photos = await _photos.FlushAsync(unitId, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _log?.Warning($"Auto-sync fotos falhou: {ex.Message}");
+        }
+
+        try
+        {
+            pulled = await _members.SyncAsync(unitId, ct).ConfigureAwait(false);
         }
         catch (UnauthorizedAccessException)
         {
@@ -125,25 +152,19 @@ public sealed class BackgroundSyncService : IAsyncDisposable
                             ct,
                             force: true)
                         .ConfigureAwait(false);
-                    var flushed = await _events.FlushAsync(unitId, ct).ConfigureAwait(false);
-                    var photos = await _photos.FlushAsync(unitId, ct).ConfigureAwait(false);
-                    var pulled = await _members.SyncAsync(unitId, ct).ConfigureAwait(false);
-                    _log?.Information(
-                        $"Auto-sync (reauth): {pulled} aluno(s), {flushed} evento(s), {photos} foto(s).");
+                    pulled = await _members.SyncAsync(unitId, ct).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
             {
-                _log?.Warning($"Auto-sync falhou após reauth: {ex.Message}");
+                _log?.Warning($"Auto-sync membros falhou após reauth: {ex.Message}");
             }
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            // shutting down
         }
         catch (Exception ex)
         {
-            _log?.Warning($"Auto-sync falhou: {ex.Message}");
+            _log?.Warning($"Auto-sync membros falhou: {ex.Message}");
         }
+
+        _log?.Information($"Auto-sync: {pulled} aluno(s), {flushed} evento(s), {photos} foto(s).");
     }
 }

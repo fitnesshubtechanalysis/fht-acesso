@@ -84,32 +84,36 @@ public sealed class MemberPhotoSyncService
 
     public async Task<int> FlushAsync(string unitId, CancellationToken cancellationToken = default)
     {
-        var pending = await _pendingSync.GetPendingAsync(cancellationToken: cancellationToken)
+        var photos = await _pendingSync
+            .GetPendingByKindAsync(SyncKindMemberPhoto, take: 50, cancellationToken)
             .ConfigureAwait(false);
-        var photos = pending
-            .Where(p => string.Equals(p.Kind, SyncKindMemberPhoto, StringComparison.OrdinalIgnoreCase))
-            .ToList();
         if (photos.Count == 0)
             return 0;
 
+        const int maxAttempts = 12;
         var uploaded = 0;
         foreach (var item in photos)
         {
             try
             {
+                if (item.Attempts >= maxAttempts)
+                {
+                    await _pendingSync.RemoveAsync(item.Id, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
                 var payload = JsonSerializer.Deserialize<PhotoPayload>(item.PayloadJson, JsonOptions);
                 if (payload is null || string.IsNullOrWhiteSpace(payload.FileName))
                 {
-                    await _pendingSync.MarkAttemptAsync(item.Id, "Invalid photo payload", cancellationToken)
-                        .ConfigureAwait(false);
+                    await _pendingSync.RemoveAsync(item.Id, cancellationToken).ConfigureAwait(false);
                     continue;
                 }
 
                 var filePath = Path.Combine(_pendingPhotosDir, payload.FileName);
                 if (!File.Exists(filePath))
                 {
-                    await _pendingSync.MarkAttemptAsync(item.Id, "Photo file missing", cancellationToken)
-                        .ConfigureAwait(false);
+                    // Arquivo sumiu — remove da fila para não prender o LIMIT.
+                    await _pendingSync.RemoveAsync(item.Id, cancellationToken).ConfigureAwait(false);
                     continue;
                 }
 
@@ -135,6 +139,8 @@ public sealed class MemberPhotoSyncService
             {
                 await _pendingSync.MarkAttemptAsync(item.Id, ex.Message, cancellationToken)
                     .ConfigureAwait(false);
+                if (item.Attempts + 1 >= maxAttempts)
+                    await _pendingSync.RemoveAsync(item.Id, cancellationToken).ConfigureAwait(false);
             }
         }
 
