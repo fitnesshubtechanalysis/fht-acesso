@@ -121,7 +121,8 @@ public sealed class MemberSyncService
         ToleranceUsed = dto.ToleranceUsed,
         ToleranceOccurrenceId = dto.ToleranceOccurrenceId,
         OccurrenceCauseCode = dto.OccurrenceCauseCode,
-        RelationshipActionId = dto.RelationshipActionId
+        RelationshipActionId = dto.RelationshipActionId,
+        BypassPresence = dto.BypassPresence
     };
 
     private static MemberStatus ParseStatus(string status)

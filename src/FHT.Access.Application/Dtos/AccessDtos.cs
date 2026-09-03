@@ -23,7 +23,8 @@ public sealed record MemberDto(
     bool ToleranceUsed = false,
     Guid? ToleranceOccurrenceId = null,
     string? OccurrenceCauseCode = null,
-    Guid? RelationshipActionId = null);
+    Guid? RelationshipActionId = null,
+    bool BypassPresence = false);
 
 public sealed record AccessEvaluateResultDto(
     string Kind,

@@ -29,8 +29,10 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
     private const int CellBins = 16;
     private const int SpatialLen = Grid * Grid * CellBins;
     private const int SfaceLen = 128;
-    private const float SfaceDefaultThreshold = 0.35f;
-    private const float SpatialDefaultThreshold = 0.45f;
+    private const float SfaceDefaultThreshold = 0.48f;
+    private const float SpatialDefaultThreshold = 0.55f;
+    /// <summary>Exige diferença vs 2º lugar — evita liberar desconhecido como cadastro recente.</summary>
+    private const float MinScoreMargin = 0.08f;
     private const int DetectMaxWidth = 640;
 
     private static readonly byte[] SfaceMagic = "SF01"u8.ToArray();
@@ -91,15 +93,22 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
             await _persistAsync(memberId, blob, ct).ConfigureAwait(false);
     }
 
-    public Task<FaceMatchResult?> IdentifyAsync(byte[] imageBgrOrJpeg, CancellationToken ct = default)
+    public Task<FaceMatchResult?> IdentifyAsync(
+        byte[] imageBgrOrJpeg,
+        CancellationToken ct = default,
+        FaceDetectionOptions? detection = null)
     {
         ArgumentNullException.ThrowIfNull(imageBgrOrJpeg);
         ct.ThrowIfCancellationRequested();
         EnsureEngine();
 
-        var probe = BuildStoredFace(imageBgrOrJpeg, enroll: false);
+        var probe = BuildStoredFace(imageBgrOrJpeg, enroll: false, detection);
+        if (probe.Sface.Count == 0 && probe.Spatial.Count == 0 && probe.Hists256.Count == 0)
+            return Task.FromResult<FaceMatchResult?>(null);
+
         Guid? bestId = null;
         var bestScore = 0.0;
+        var secondBest = 0.0;
         var bestSface = false;
 
         lock (_sync)
@@ -109,17 +118,31 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
                 var score = Score(probe, template, out var usedSface);
                 if (score > bestScore)
                 {
+                    secondBest = bestScore;
                     bestScore = score;
                     bestId = memberId;
                     bestSface = usedSface;
                 }
+                else if (score > secondBest)
+                {
+                    secondBest = score;
+                }
             }
         }
 
-        var cutoff = _threshold > 0.7
+        // Settings > 0.7 are legacy UI values — use engine defaults. Otherwise use configured floor.
+        var configured = _threshold > 0.7
             ? (bestSface ? SfaceDefaultThreshold : SpatialDefaultThreshold)
             : _threshold;
+        var cutoff = Math.Max(
+            configured,
+            bestSface ? SfaceDefaultThreshold : SpatialDefaultThreshold);
+
         if (bestId is null || bestScore < cutoff)
+            return Task.FromResult<FaceMatchResult?>(null);
+
+        // Empate / ambiguidade: desconhecido costuma ficar perto de vários templates fracos.
+        if (bestScore - secondBest < MinScoreMargin)
             return Task.FromResult<FaceMatchResult?>(null);
 
         return Task.FromResult<FaceMatchResult?>(new FaceMatchResult(bestId.Value, bestScore));
@@ -186,13 +209,16 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         return hist;
     }
 
-    private StoredFace BuildStoredFace(byte[] imageBgrOrJpeg, bool enroll)
+    private StoredFace BuildStoredFace(
+        byte[] imageBgrOrJpeg,
+        bool enroll,
+        FaceDetectionOptions? detection = null)
     {
         if (OpenCvAvailable)
         {
             try
             {
-                return BuildWithOpenCv(imageBgrOrJpeg, enroll);
+                return BuildWithOpenCv(imageBgrOrJpeg, enroll, detection);
             }
             catch
             {
@@ -206,8 +232,12 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         };
     }
 
-    private StoredFace BuildWithOpenCv(byte[] imageBgrOrJpeg, bool enroll)
+    private StoredFace BuildWithOpenCv(
+        byte[] imageBgrOrJpeg,
+        bool enroll,
+        FaceDetectionOptions? detection)
     {
+        var detect = detection ?? FaceDetectionOptions.Default;
         using var src = Cv2.ImDecode(imageBgrOrJpeg, ImreadModes.Color);
         if (src.Empty())
         {
@@ -221,9 +251,9 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         {
             foreach (var variant in variants)
             {
-                using var work = Downscale(variant);
+                using var work = Downscale(variant, detect.DetectMaxWidth);
                 using var enhanced = EnhanceLighting(work);
-                var face = DetectLargestFace(enhanced);
+                var face = DetectLargestFace(enhanced, detect);
                 Mat region;
                 if (face is { } rect)
                 {
@@ -236,7 +266,8 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
                 }
                 else
                 {
-                    region = FaceishCropBgr(enhanced);
+                    // Identify: sem rosto Haar válido (longe / lateral / fundo) → não inventa crop.
+                    continue;
                 }
 
                 try
@@ -270,6 +301,10 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
 
         if (enroll && !detected)
             throw new InvalidOperationException("Nenhum rosto detectado. Olhe para a câmera e tente de novo.");
+
+        // Identify sem face: não preencher histograma do frame inteiro (falso positivo de longe).
+        if (!enroll && !detected)
+            return stored;
 
         if (stored.Sface.Count == 0 && stored.Spatial.Count == 0 && stored.Hists256.Count == 0)
             stored.Hists256.Add(BuildHistogramFromBytes(imageBgrOrJpeg));
@@ -329,21 +364,52 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         return found;
     }
 
-    private Rect? DetectLargestFace(Mat bgr)
+    private Rect? DetectLargestFace(Mat bgr, FaceDetectionOptions detect)
     {
         using var gray = new Mat();
         Cv2.CvtColor(bgr, gray, ColorConversionCodes.BGR2GRAY);
         Cv2.EqualizeHist(gray, gray);
 
+        var minSize = new Size(Math.Max(12, detect.MinFaceSize), Math.Max(12, detect.MinFaceSize));
         Rect[] hits = [];
         if (_frontal is not null)
-            hits = _frontal.DetectMultiScale(gray, 1.08, 3, HaarDetectionTypes.ScaleImage, new Size(28, 28));
+            hits = _frontal.DetectMultiScale(
+                gray,
+                detect.ScaleFactor,
+                detect.MinNeighbors,
+                HaarDetectionTypes.ScaleImage,
+                minSize);
         if (hits.Length == 0 && _profile is not null)
-            hits = _profile.DetectMultiScale(gray, 1.08, 3, HaarDetectionTypes.ScaleImage, new Size(28, 28));
+            hits = _profile.DetectMultiScale(
+                gray,
+                detect.ScaleFactor,
+                detect.MinNeighbors,
+                HaarDetectionTypes.ScaleImage,
+                minSize);
         if (hits.Length == 0)
             return null;
 
-        return hits.OrderByDescending(r => r.Width * r.Height).First();
+        var frameArea = Math.Max(1, bgr.Width * bgr.Height);
+        var minArea = Math.Max(1.0, detect.MinFaceAreaFraction) * frameArea;
+        var mx = Math.Clamp(detect.CenterXMargin, 0, 0.45);
+        var my = Math.Clamp(detect.CenterYMargin, 0, 0.45);
+        var x0 = bgr.Width * mx;
+        var x1 = bgr.Width * (1.0 - mx);
+        var y0 = bgr.Height * my;
+        var y1 = bgr.Height * (1.0 - my);
+
+        var candidates = hits
+            .Where(r => r.Width * r.Height >= minArea)
+            .Where(r =>
+            {
+                var cx = r.X + r.Width / 2.0;
+                var cy = r.Y + r.Height / 2.0;
+                return cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1;
+            })
+            .OrderByDescending(r => r.Width * r.Height)
+            .ToList();
+
+        return candidates.Count > 0 ? candidates[0] : null;
     }
 
     private static Mat PaddedSquare(Mat bgr, Rect face)
@@ -377,13 +443,14 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         return emb;
     }
 
-    private static Mat Downscale(Mat bgr)
+    private static Mat Downscale(Mat bgr, int detectMaxWidth)
     {
-        if (bgr.Width <= DetectMaxWidth)
+        var maxWidth = detectMaxWidth > 0 ? detectMaxWidth : DetectMaxWidth;
+        if (bgr.Width <= maxWidth)
             return bgr.Clone();
 
-        var scale = DetectMaxWidth / (double)bgr.Width;
-        var size = new Size(DetectMaxWidth, Math.Max(1, (int)Math.Round(bgr.Height * scale)));
+        var scale = maxWidth / (double)bgr.Width;
+        var size = new Size(maxWidth, Math.Max(1, (int)Math.Round(bgr.Height * scale)));
         var dst = new Mat();
         Cv2.Resize(bgr, dst, size, 0, 0, InterpolationFlags.Area);
         return dst;
@@ -396,8 +463,18 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         Cv2.Split(lab, out var planes);
         try
         {
-            using var clahe = Cv2.CreateCLAHE(2.0, new Size(8, 8));
+            using var clahe = Cv2.CreateCLAHE(3.5, new Size(8, 8));
             clahe.Apply(planes[0], planes[0]);
+            var mean = Cv2.Mean(planes[0]).Val0;
+            const double target = 148.0;
+            var delta = target - mean;
+            if (Math.Abs(delta) > 6)
+            {
+                var lifted = new Mat();
+                planes[0].ConvertTo(lifted, MatType.CV_8UC1, 1.0, delta * 0.5);
+                planes[0].Dispose();
+                planes[0] = lifted;
+            }
             using var merged = new Mat();
             Cv2.Merge(planes, merged);
             var enhanced = new Mat();

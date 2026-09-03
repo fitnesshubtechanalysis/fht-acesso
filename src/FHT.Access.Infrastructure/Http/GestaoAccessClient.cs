@@ -260,6 +260,33 @@ public sealed class GestaoAccessClient : IGestaoAccessClient
         return new Uri(origin, relativePath);
     }
 
+    public async Task<UpdateChannelDto?> GetUpdateChannelAsync(
+        string unitId,
+        string deviceId,
+        string appVersion,
+        CancellationToken ct = default)
+    {
+        var path = $"api/v1/units/{Uri.EscapeDataString(unitId)}/access/devices/{Uri.EscapeDataString(deviceId)}/update"
+                   + $"?appVersion={Uri.EscapeDataString(appVersion)}";
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, Absolute(path));
+        ApplyAuth(request);
+
+        using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound
+            || response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            return null;
+
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            return null; // token expirado — BackgroundSyncService vai re-autenticar no próximo ciclo
+
+        response.EnsureSuccessStatusCode();
+        return await response.Content
+            .ReadFromJsonAsync<UpdateChannelDto>(JsonOptions, ct)
+            .ConfigureAwait(false);
+    }
+
     private sealed class PhotoUploadResponse
     {
         public string? PhotoUrl { get; set; }

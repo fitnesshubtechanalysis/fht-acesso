@@ -19,10 +19,13 @@ public enum WebcamConnectionState
 }
 
 /// <summary>
-/// OpenCvSharp VideoCapture loop — Full HD preview, decoupled process FPS for recognition.
+/// OpenCvSharp VideoCapture loop — preview at camera resolution, JPEG for face pipeline downscaled.
 /// </summary>
 public sealed class WebcamService : IDisposable
 {
+    private const int DefaultMaxProcessWidth = 1280;
+    private static readonly int[] JpegParams = { (int)ImwriteFlags.JpegQuality, 88 };
+
     private readonly object _sync = new();
     private VideoCapture? _capture;
     private CancellationTokenSource? _cts;
@@ -41,8 +44,16 @@ public sealed class WebcamService : IDisposable
     private long _frameCounter;
     private WebcamConnectionState _state = WebcamConnectionState.Disconnected;
 
-    public double MotionRatioThreshold { get; set; } = 0.018;
-    public TimeSpan MotionHold { get; set; } = TimeSpan.FromSeconds(2.0);
+    public double MotionRatioThreshold { get; set; } = 0.025;
+    public int MotionPixelThreshold { get; set; } = 28;
+    public int MaxProcessWidth { get; set; } = DefaultMaxProcessWidth;
+    public TimeSpan MotionHold { get; set; } = TimeSpan.FromSeconds(1.6);
+
+    /// <summary>Frações 0–1: só o centro da imagem conta como movimento (ignora fundo/corredor).</summary>
+    public double MotionRoiWidthFraction { get; set; } = 0.55;
+    public double MotionRoiHeightFraction { get; set; } = 0.62;
+    /// <summary>Centro vertical do ROI (0=topo, 1=base). ~0.45 favorece pessoa parada na catraca.</summary>
+    public double MotionRoiCenterY { get; set; } = 0.45;
 
     public event EventHandler<WebcamFrameEventArgs>? FrameReady;
     public event EventHandler<WebcamConnectionState>? StateChanged;
@@ -61,6 +72,10 @@ public sealed class WebcamService : IDisposable
     }
 
     public int CameraIndex { get; private set; }
+
+    public string? LastOpenError { get; private set; }
+
+    public long FramesCaptured { get; private set; }
 
     public void Configure(int width, int height, int previewFps, int processFps)
     {
@@ -178,13 +193,17 @@ public sealed class WebcamService : IDisposable
 
             SetState(WebcamConnectionState.Connected);
             _frameCounter++;
+            FramesCaptured++;
             var shouldProcess = _frameCounter % processEveryN == 0;
 
             UpdateMotion(frame);
 
             if (shouldProcess)
             {
-                if (!Cv2.ImEncode(".jpg", frame, out var jpeg) || jpeg is null || jpeg.Length == 0)
+                using var processFrame = DownscaleForProcessing(frame, MaxProcessWidth);
+                if (!Cv2.ImEncode(".jpg", processFrame, out var jpeg, JpegParams)
+                    || jpeg is null
+                    || jpeg.Length == 0)
                     continue;
 
                 BitmapSource? bitmap;
@@ -216,31 +235,63 @@ public sealed class WebcamService : IDisposable
                 return;
 
             _capture?.Dispose();
-            _capture = new VideoCapture(_cameraIndex);
-            if (!_capture.IsOpened())
+            _capture = TryOpenCapture(_cameraIndex);
+            if (_capture is null || !_capture.IsOpened())
             {
-                _capture.Dispose();
+                _capture?.Dispose();
                 _capture = null;
-                throw new InvalidOperationException($"Não foi possível abrir a câmera {_cameraIndex}.");
+                LastOpenError = $"Não foi possível abrir a câmera índice {_cameraIndex}.";
+                throw new InvalidOperationException(LastOpenError);
             }
 
+            LastOpenError = null;
             _capture.Set(VideoCaptureProperties.FrameWidth, _width);
             _capture.Set(VideoCaptureProperties.FrameHeight, _height);
             _capture.Set(VideoCaptureProperties.Fps, _previewFps);
+            try { _capture.Set(VideoCaptureProperties.AutoExposure, 0.75); } catch { /* driver-dependent */ }
             CameraIndex = _cameraIndex;
         }
     }
 
+    private static VideoCapture? TryOpenCapture(int index)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            var dshow = new VideoCapture(index, VideoCaptureAPIs.DSHOW);
+            if (dshow.IsOpened())
+                return dshow;
+            dshow.Dispose();
+        }
+
+        var fallback = new VideoCapture(index);
+        return fallback.IsOpened() ? fallback : null;
+    }
+
+    private static Mat DownscaleForProcessing(Mat bgr, int maxProcessWidth)
+    {
+        var maxWidth = maxProcessWidth > 0 ? maxProcessWidth : DefaultMaxProcessWidth;
+        if (bgr.Width <= maxWidth)
+            return bgr.Clone();
+
+        var scale = maxWidth / (double)bgr.Width;
+        var h = Math.Max(1, (int)Math.Round(bgr.Height * scale));
+        var resized = new Mat();
+        Cv2.Resize(bgr, resized, new OpenCvSharp.Size(maxWidth, h));
+        return resized;
+    }
+
     private void UpdateMotion(Mat bgr)
     {
-        using var gray = new Mat();
-        Cv2.CvtColor(bgr, gray, ColorConversionCodes.BGR2GRAY);
+        using var grayFull = new Mat();
+        Cv2.CvtColor(bgr, grayFull, ColorConversionCodes.BGR2GRAY);
+        using var gray = MotionRoi(grayFull);
         Cv2.GaussianBlur(gray, gray, new OpenCvSharp.Size(21, 21), 0);
 
         lock (_sync)
         {
             _warmupFrames++;
-            if (_warmupFrames < 8 || _prevGray is null || _prevGray.Empty())
+            if (_warmupFrames < 8 || _prevGray is null || _prevGray.Empty()
+                || _prevGray.Width != gray.Width || _prevGray.Height != gray.Height)
             {
                 _prevGray?.Dispose();
                 _prevGray = gray.Clone();
@@ -250,7 +301,7 @@ public sealed class WebcamService : IDisposable
             using var diff = new Mat();
             using var thresh = new Mat();
             Cv2.Absdiff(_prevGray, gray, diff);
-            Cv2.Threshold(diff, thresh, 25, 255, ThresholdTypes.Binary);
+            Cv2.Threshold(diff, thresh, MotionPixelThreshold, 255, ThresholdTypes.Binary);
 
             var changed = Cv2.CountNonZero(thresh);
             var total = thresh.Rows * thresh.Cols;
@@ -260,6 +311,19 @@ public sealed class WebcamService : IDisposable
             _prevGray.Dispose();
             _prevGray = gray.Clone();
         }
+    }
+
+    /// <summary>Recorte central — pessoas passando no fundo da lente não disparam reconhecimento.</summary>
+    private Mat MotionRoi(Mat gray)
+    {
+        var wf = Math.Clamp(MotionRoiWidthFraction, 0.25, 1.0);
+        var hf = Math.Clamp(MotionRoiHeightFraction, 0.25, 1.0);
+        var cy = Math.Clamp(MotionRoiCenterY, 0.2, 0.8);
+        var w = Math.Max(16, (int)(gray.Width * wf));
+        var h = Math.Max(16, (int)(gray.Height * hf));
+        var x = Math.Clamp((gray.Width - w) / 2, 0, Math.Max(0, gray.Width - w));
+        var y = Math.Clamp((int)(gray.Height * cy) - h / 2, 0, Math.Max(0, gray.Height - h));
+        return new Mat(gray, new Rect(x, y, w, h)).Clone();
     }
 
     private void SetState(WebcamConnectionState state)

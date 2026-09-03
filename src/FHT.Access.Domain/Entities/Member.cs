@@ -22,4 +22,7 @@ public sealed class Member
     public Guid? ToleranceOccurrenceId { get; set; }
     public string? OccurrenceCauseCode { get; set; }
     public Guid? RelationshipActionId { get; set; }
+
+    /// <summary>Professor/colaborador — ignora trava de presença (entrada/saída livres).</summary>
+    public bool BypassPresence { get; set; }
 }

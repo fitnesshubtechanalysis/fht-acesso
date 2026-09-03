@@ -66,12 +66,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private void AttendantCorner_Click(object sender, MouseButtonEventArgs e)
-    {
-        OpenAttendant();
-        e.Handled = true;
-    }
-
     private void OnShellContentChanged(object? sender, EventArgs e)
         => _ = Dispatcher.BeginInvoke(ApplyChrome);
 

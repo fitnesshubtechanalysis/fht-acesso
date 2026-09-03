@@ -61,8 +61,8 @@ public sealed class TurnstileConnectionSupervisor : IAsyncDisposable
         _supervisorCts = new CancellationTokenSource();
         _supervisorLoop = Task.Run(() => SupervisorLoopAsync(settings, _supervisorCts.Token));
 
-        if (!settings.UseFakeTurnstile)
-            _ = ConnectFromSettingsAsync(settings);
+        // Always connect (fake or real). Fake used to be skipped and ReleaseEntry threw forever.
+        _ = ConnectFromSettingsAsync(settings);
     }
 
     public async Task ConnectFromSettingsAsync(AppSettingsSnapshot settings, CancellationToken ct = default)
@@ -94,8 +94,18 @@ public sealed class TurnstileConnectionSupervisor : IAsyncDisposable
 
         while (!ct.IsCancellationRequested)
         {
-            if (_manualDisconnect || settings.UseFakeTurnstile)
+            if (_manualDisconnect)
             {
+                await Task.Delay(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
+                continue;
+            }
+
+            // Keep fake turnstile connected (demo / lab without hardware).
+            if (settings.UseFakeTurnstile)
+            {
+                if (_turnstile.State is TurnstileConnectionState.Disconnected or TurnstileConnectionState.Error)
+                    await SafeConnectAsync(new TurnstileConfig { UseFake = true }, ct).ConfigureAwait(false);
+
                 await Task.Delay(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
                 continue;
             }

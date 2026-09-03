@@ -57,7 +57,7 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
     private readonly WebcamService _webcam;
     private readonly AppSettings _settings;
     private readonly FileLogger _logger;
-    private readonly AutomaticAccessEngine _accessEngine;
+    private readonly GateLaneEngineHost _accessEngine;
     private readonly Dispatcher _dispatcher;
 
     private AccessUiState _screen = AccessUiState.AttendantLogin;
@@ -117,7 +117,7 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
         AppSettings settings,
         FileLogger logger,
         AdminViewModel adminViewModel,
-        AutomaticAccessEngine accessEngine)
+        GateLaneEngineHost accessEngine)
     {
         _mode = mode;
         _states = states;
@@ -788,18 +788,40 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        var captureBytes = (byte[])jpeg.Clone();
         try
         {
             IsBusy = true;
-            await _recognition.EnrollAsync(memberId, jpeg).ConfigureAwait(true);
+            EnrollStatus = "Processando captura…";
+
+            await Task.Run(async () =>
+                await _recognition.EnrollAsync(memberId, captureBytes).ConfigureAwait(false))
+                .ConfigureAwait(true);
+
             if (!string.IsNullOrWhiteSpace(_settings.UnitId))
             {
-                await _photoSync
-                    .EnqueueAndTryUploadAsync(_settings.UnitId.Trim(), memberId, jpeg)
-                    .ConfigureAwait(true);
+                var unitId = _settings.UnitId.Trim();
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _photoSync
+                            .EnqueueAndTryUploadAsync(unitId, memberId, captureBytes)
+                            .ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Warning($"Photo upload queued only: {ex.Message}");
+                    }
+                });
             }
 
-            await _memberSync.RefreshMemberAsync(memberId).ConfigureAwait(true);
+            _ = Task.Run(async () =>
+            {
+                try { await _memberSync.RefreshMemberAsync(memberId).ConfigureAwait(false); }
+                catch { /* best effort */ }
+            });
+
             _logger.Information($"Face enrolled for member {memberId}.");
 
             StopEnrollmentPreview();
@@ -1028,10 +1050,17 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
         StopEnrollmentPreview();
         ReleaseCamera();
         IsSettingsVisible = false;
+        IsIdleWarningVisible = false;
+        Pin = string.Empty;
+        Username = string.Empty;
+        LoginError = string.Empty;
+        IsPasswordVisible = false;
+        _pendingAfterLogin = AttendantIntent.Browse;
         _mode.EnterAutomatic();
         _states.ResetAutomaticIdle();
         _accessEngine.RetryFromKiosk();
         _logger.Information("Totem reativado (reconhecimento facial ligado).");
+        SessionEnded?.Invoke(this, EventArgs.Empty);
     }
 
     private void ScheduleReturnToKiosk(TimeSpan delay)

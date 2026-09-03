@@ -848,7 +848,8 @@
                                 </StackPanel>
                             </Grid>
 
-                            <Grid Width="332" Height="332" HorizontalAlignment="Center" Margin="0,0,0,14">
+                            <!-- Preview 16:9 — mesma proporção/orientação da webcam (sem espelho). -->
+                            <Grid Width="520" Height="292" HorizontalAlignment="Center" Margin="0,0,0,14">
                                 <Border Background="#0C0C0C" CornerRadius="10" ClipToBounds="True">
                                     <Grid>
                                         <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE714;" FontSize="48" Foreground="#3F3F3F"
@@ -859,21 +860,21 @@
                                                RenderOptions.BitmapScalingMode="HighQuality" />
                                     </Grid>
                                 </Border>
-                                <Ellipse Width="210" Height="210" Stroke="#6B6B6B" StrokeThickness="1.2" Opacity="0.55"
+                                <Ellipse Width="150" Height="150" Stroke="#6B6B6B" StrokeThickness="1.2" Opacity="0.55"
                                          HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" />
                                 <Path Stroke="#22C55E" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                                      Data="M 14,52 L 14,14 L 52,14" HorizontalAlignment="Left" VerticalAlignment="Top" />
+                                      Data="M 14,52 L 14,14 L 52,14" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8" />
                                 <Path Stroke="#22C55E" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                                      Data="M 0,52 L 0,14 L 38,14" HorizontalAlignment="Right" VerticalAlignment="Top"
+                                      Data="M 0,52 L 0,14 L 38,14" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8"
                                       RenderTransformOrigin="0.5,0.5">
                                     <Path.RenderTransform>
                                         <ScaleTransform ScaleX="-1" />
                                     </Path.RenderTransform>
                                 </Path>
                                 <Path Stroke="#22C55E" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                                      Data="M 14,0 L 14,38 L 52,38" HorizontalAlignment="Left" VerticalAlignment="Bottom" />
+                                      Data="M 14,0 L 14,38 L 52,38" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="8" />
                                 <Path Stroke="#22C55E" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                                      Data="M 0,0 L 0,38 L 38,38" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                      Data="M 0,0 L 0,38 L 38,38" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="8"
                                       RenderTransformOrigin="0.5,0.5">
                                     <Path.RenderTransform>
                                         <ScaleTransform ScaleX="-1" />
@@ -1241,6 +1242,43 @@
                                                     <ControlTemplate.Triggers>
                                                         <Trigger Property="IsMouseOver" Value="True">
                                                             <Setter TargetName="Bg" Property="Opacity" Value="0.92" />
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Button.Template>
+                                        </Button>
+
+                                        <Button Margin="0,12,0,0"
+                                                Height="44"
+                                                Cursor="Hand"
+                                                HorizontalContentAlignment="Stretch"
+                                                Command="{Binding ReturnToKioskCommand}">
+                                            <Button.Template>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="Bg"
+                                                            Background="#161616"
+                                                            BorderBrush="#333333"
+                                                            BorderThickness="1"
+                                                            CornerRadius="10"
+                                                            Padding="16,0">
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                            <TextBlock FontFamily="Segoe MDL2 Assets"
+                                                                       Text="&#xE72B;"
+                                                                       FontSize="15"
+                                                                       Foreground="#C8C8C8"
+                                                                       VerticalAlignment="Center"
+                                                                       Margin="0,0,10,0" />
+                                                            <TextBlock Text="VOLTAR AO MODO ALUNO"
+                                                                       FontSize="13"
+                                                                       FontWeight="SemiBold"
+                                                                       Foreground="#E5E5E5"
+                                                                       VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="Bg" Property="BorderBrush" Value="#F15A29" />
+                                                            <Setter TargetName="Bg" Property="Background" Value="#1C1C1C" />
                                                         </Trigger>
                                                     </ControlTemplate.Triggers>
                                                 </ControlTemplate>

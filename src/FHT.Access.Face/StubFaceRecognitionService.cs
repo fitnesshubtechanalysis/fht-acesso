@@ -24,7 +24,10 @@ public sealed class StubFaceRecognitionService : IFaceRecognitionService
         return Task.CompletedTask;
     }
 
-    public Task<FaceMatchResult?> IdentifyAsync(byte[] imageBgrOrJpeg, CancellationToken ct = default)
+    public Task<FaceMatchResult?> IdentifyAsync(
+        byte[] imageBgrOrJpeg,
+        CancellationToken ct = default,
+        FaceDetectionOptions? detection = null)
     {
         ArgumentNullException.ThrowIfNull(imageBgrOrJpeg);
         ct.ThrowIfCancellationRequested();

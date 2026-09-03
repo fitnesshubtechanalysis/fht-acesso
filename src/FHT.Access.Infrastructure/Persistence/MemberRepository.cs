@@ -10,7 +10,8 @@ public sealed class MemberRepository : IMemberRepository
     private const string SelectColumns = """
         Id, Name, Status, AccessAllowed, ValidUntil, UpdatedAt, PhotoUrl, Cpf,
         ReasonCode, OperationalStatus, FinancialStatus, AccessStatus, AccessDecisionKind,
-        ToleranceUsed, ToleranceOccurrenceId, OccurrenceCauseCode, RelationshipActionId
+        ToleranceUsed, ToleranceOccurrenceId, OccurrenceCauseCode, RelationshipActionId,
+        BypassPresence
         """;
 
     private readonly SqliteConnectionFactory _factory;
@@ -59,11 +60,12 @@ public sealed class MemberRepository : IMemberRepository
                 INSERT INTO Members (
                     Id, Name, Status, AccessAllowed, ValidUntil, UpdatedAt, PhotoUrl, Cpf, LastSyncAt,
                     ReasonCode, OperationalStatus, FinancialStatus, AccessStatus, AccessDecisionKind,
-                    ToleranceUsed, ToleranceOccurrenceId, OccurrenceCauseCode, RelationshipActionId)
+                    ToleranceUsed, ToleranceOccurrenceId, OccurrenceCauseCode, RelationshipActionId,
+                    BypassPresence)
                 VALUES (
                     $id, $name, $status, $allowed, $validUntil, $updatedAt, $photoUrl, $cpf, $lastSync,
                     $reason, $operational, $financial, $access, $decisionKind,
-                    $tolUsed, $occId, $occCause, $relId)
+                    $tolUsed, $occId, $occCause, $relId, $bypass)
                 ON CONFLICT(Id) DO UPDATE SET
                     Name = excluded.Name,
                     Status = excluded.Status,
@@ -81,7 +83,8 @@ public sealed class MemberRepository : IMemberRepository
                     ToleranceUsed = excluded.ToleranceUsed,
                     ToleranceOccurrenceId = excluded.ToleranceOccurrenceId,
                     OccurrenceCauseCode = excluded.OccurrenceCauseCode,
-                    RelationshipActionId = excluded.RelationshipActionId;
+                    RelationshipActionId = excluded.RelationshipActionId,
+                    BypassPresence = excluded.BypassPresence;
                 """;
             BindMember(command, member);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -242,6 +245,7 @@ public sealed class MemberRepository : IMemberRepository
         command.Parameters.AddWithValue(
             "$relId",
             member.RelationshipActionId is null ? DBNull.Value : member.RelationshipActionId.Value.ToString("D"));
+        command.Parameters.AddWithValue("$bypass", member.BypassPresence ? 1 : 0);
     }
 
     private static Member MapMember(SqliteDataReader reader)
@@ -269,6 +273,7 @@ public sealed class MemberRepository : IMemberRepository
         if (reader.FieldCount > 14 && !reader.IsDBNull(14)) m.ToleranceOccurrenceId = Guid.Parse(reader.GetString(14));
         if (reader.FieldCount > 15 && !reader.IsDBNull(15)) m.OccurrenceCauseCode = reader.GetString(15);
         if (reader.FieldCount > 16 && !reader.IsDBNull(16)) m.RelationshipActionId = Guid.Parse(reader.GetString(16));
+        if (reader.FieldCount > 17 && !reader.IsDBNull(17)) m.BypassPresence = reader.GetInt64(17) != 0;
         return m;
     }
 

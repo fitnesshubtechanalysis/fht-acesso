@@ -7,6 +7,7 @@ using FHT.Access.Application.Abstractions;
 using FHT.Access.Application.Services;
 using FHT.Access.Domain.Abstractions;
 using FHT.Access.Domain.Entities;
+using FHT.Access.Application.Services;
 using FHT.Access.Domain.Enums;
 using FHT.Access.Infrastructure.Logging;
 using FHT.Access.Infrastructure.Settings;
@@ -38,6 +39,7 @@ public sealed class AdminViewModel : ViewModelBase, IDisposable
     private readonly WebcamService _webcam;
     private readonly FileLogger _logger;
     private readonly PublicKioskViewModel _kiosk;
+    private readonly UpdateService _updateSvc;
 
     private string _deviceName = string.Empty;
     private string _unitId = string.Empty;
@@ -88,7 +90,8 @@ public sealed class AdminViewModel : ViewModelBase, IDisposable
         IPendingSyncRepository pending,
         WebcamService webcam,
         FileLogger logger,
-        PublicKioskViewModel kiosk)
+        PublicKioskViewModel kiosk,
+        UpdateService updateSvc)
     {
         _settings = settings;
         _store = store;
@@ -106,6 +109,7 @@ public sealed class AdminViewModel : ViewModelBase, IDisposable
         _webcam = webcam;
         _logger = logger;
         _kiosk = kiosk;
+        _updateSvc = updateSvc;
 
         Members = new ObservableCollection<MemberOption>();
         PassageLog = new ObservableCollection<string>();
@@ -127,6 +131,7 @@ public sealed class AdminViewModel : ViewModelBase, IDisposable
         RefreshSyncCommand = new AsyncRelayCommand(RefreshSyncAsync);
         RefreshDiagnosticsCommand = new RelayCommand(RefreshDiagnostics);
         ReturnToKioskCommand = new RelayCommand(() => RequestReturnToKiosk?.Invoke());
+        CheckUpdateCommand = new AsyncRelayCommand(CheckUpdateAsync);
 
         _turnstile.StateChanged += OnTurnstileStateChanged;
         _turnstile.PassageReceived += OnPassageReceived;
@@ -160,6 +165,7 @@ public sealed class AdminViewModel : ViewModelBase, IDisposable
     public AsyncRelayCommand RefreshSyncCommand { get; }
     public RelayCommand RefreshDiagnosticsCommand { get; }
     public RelayCommand ReturnToKioskCommand { get; }
+    public AsyncRelayCommand CheckUpdateCommand { get; }
 
     public string DeviceName
     {
@@ -363,6 +369,32 @@ public sealed class AdminViewModel : ViewModelBase, IDisposable
     {
         get => _networkNote;
         private set => SetProperty(ref _networkNote, value);
+    }
+
+    public string AppVersion => _updateSvc.CurrentVersion;
+    public string UpdateStatusText => _updateSvc.State switch
+    {
+        UpdateUiState.None => "Sem atualização pendente.",
+        UpdateUiState.Available => $"Versão {_updateSvc.AvailableVersion} disponível — agendada fora do expediente.",
+        UpdateUiState.Countdown => $"Atualização em {_updateSvc.CountdownRemaining}s...",
+        UpdateUiState.Downloading => $"Baixando {_updateSvc.DownloadPercent}%...",
+        UpdateUiState.Applying => "Aplicando — reiniciando...",
+        _ => string.Empty
+    };
+
+    private async Task CheckUpdateAsync()
+    {
+        StatusMessage = "Verificando atualização...";
+        try
+        {
+            await _updateSvc.CheckNowAsync().ConfigureAwait(true);
+            OnPropertyChanged(nameof(UpdateStatusText));
+            StatusMessage = UpdateStatusText;
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Erro ao verificar: {ex.Message}";
+        }
     }
 
     public async Task InitializeAsync()

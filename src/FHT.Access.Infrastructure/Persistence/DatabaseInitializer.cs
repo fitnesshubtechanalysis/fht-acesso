@@ -186,6 +186,7 @@ public sealed class DatabaseInitializer
             ("ToleranceOccurrenceId", "TEXT"),
             ("OccurrenceCauseCode", "TEXT"),
             ("RelationshipActionId", "TEXT"),
+            ("BypassPresence", "INTEGER"),
         })
         {
             await EnsureColumnAsync(connection, "Members", col, type, cancellationToken).ConfigureAwait(false);

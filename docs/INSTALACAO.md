@@ -1,4 +1,4 @@
-# FHT Access — Instalação na academia
+﻿# FHT Access — Instalação na academia
 
 Guia para instalar o totem **sem levar código-fonte**. Você publica o app no PC de desenvolvimento e copia só a pasta compilada para o computador do acesso.
 
@@ -243,12 +243,48 @@ Linhas úteis no log:
 
 ---
 
-## 11. Atualizar versão na academia
+## 11. Atualização automática (Velopack)
 
-1. No PC de dev: rode `publish-academia.ps1` de novo
-2. **Feche** o FHT Access na academia (bandeja → Sair)
-3. Substitua os arquivos em `C:\FHT\Access\` (mantenha `%ProgramData%\FHT\Access\` intacto)
-4. Abra de novo
+O totem atualiza **sem intervenção humana** via Velopack. O fluxo:
+
+1. A cada 15 min (e no boot) o app consulta `GET /api/v1/units/:id/access/devices/:id/update` na Gestão.
+2. Se houver versão nova **e** o horário for dentro da janela permitida (padrão 20h–5h) — ou se for obrigatória — inicia o processo.
+3. A tela do kiosk mostra **faixa de aviso** enquanto aguarda a janela.
+4. Na hora: exibe **countdown de 60 s** → pausa reconhecimento → baixa com barra de progresso → reinicia automaticamente.
+
+### Registrar uma versão nova na Gestão
+
+Após publicar o GitHub Release (seção 2), crie ou atualize o registro via API:
+
+```http
+POST /api/v1/units/{unitId}/access/app-releases
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "latestVersion": "1.2.3",
+  "downloadUrl": "https://github.com/seu-org/fht-acesso/releases/download/v1.2.3/",
+  "mandatory": false,
+  "applyAfterHour": 20,
+  "applyBeforeHour": 5
+}
+```
+
+`downloadUrl` deve apontar para o diretório raiz dos assets Velopack (sem `/RELEASES`).
+O totem descobre o pacote correto automaticamente via feed Velopack.
+
+### Dados preservados na atualização
+
+Os dados em `%ProgramData%\FHT\Access\` (SQLite, faciais, appsettings) ficam **fora**
+da pasta do app — o Velopack substitui só os binários.
+
+### Atualização manual (emergência)
+
+Se o canal automático falhar, ainda é possível:
+
+1. No PC de dev: `.\scripts\publish-academia.ps1 -Version "1.2.3"`
+2. Copie `FHT.Acesso-Setup.exe` do `publish\velopack\` para o totem
+3. Execute o Setup — ele atualiza sobre a versão existente sem apagar dados
 
 Não apague `access.db` na atualização — só se quiser recomeçar do zero.
 

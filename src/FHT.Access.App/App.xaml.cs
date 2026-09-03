@@ -14,6 +14,9 @@ using FHT.Access.Infrastructure.Persistence;
 using FHT.Access.Infrastructure.Settings;
 using FHT.Access.Toletus;
 using Microsoft.Extensions.DependencyInjection;
+using FHT.Access.Application.Abstractions;
+using FHT.Access.Application.Services;
+using Velopack;
 
 namespace FHT.Access.App;
 
@@ -72,6 +75,26 @@ public partial class App : System.Windows.Application
             Boot("AddFhtAccessInfrastructure");
             collection.AddFhtAccessInfrastructure();
 
+            // Velopack updater — deve ser o primeiro singleton registrado antes do DI ser construído.
+            collection.AddSingleton<IAppUpdater, VelopackAppUpdater>();
+            collection.AddSingleton<UpdateService>(sp =>
+            {
+                var s = sp.GetRequiredService<AppSettings>();
+                var log = sp.GetRequiredService<FileLogger>();
+                return new UpdateService(
+                    sp.GetRequiredService<IGestaoAccessClient>(),
+                    sp.GetRequiredService<IAppUpdater>(),
+                    sp.GetRequiredService<OperatingModeService>(),
+                    new UpdateServiceOptions
+                    {
+                        UnitId = s.UnitId ?? string.Empty,
+                        DeviceId = s.DeviceId ?? string.Empty,
+                        LogWarning = m => log.Warning(m),
+                        LogError = m => log.Error(m),
+                        LogInfo = m => log.Information(m),
+                    });
+            });
+
             Boot("peek settings");
             var peek = new JsonSettingsStore().LoadAppSettings();
 
@@ -111,7 +134,8 @@ public partial class App : System.Windows.Application
             });
 
             collection.AddFhtAccessApplication();
-            collection.AddSingleton<WebcamService>();
+            collection.AddSingleton<WebcamLaneHost>();
+            collection.AddSingleton<WebcamService>(sp => sp.GetRequiredService<WebcamLaneHost>().Entry);
             collection.AddSingleton<PublicKioskViewModel>();
             collection.AddSingleton<AdminViewModel>();
             collection.AddSingleton<AttendantShellViewModel>();
@@ -134,10 +158,29 @@ public partial class App : System.Windows.Application
             flow.PassageTimeout = TimeSpan.FromSeconds(settings.PassageTimeoutSec <= 0 ? 10 : settings.PassageTimeoutSec);
             flow.EntryOnlyMode = settings.ExitMode != "facial";
 
+            var dualGate = settings.WebcamIndexExit >= 0 && settings.WebcamIndexExit != settings.WebcamIndex;
+            flow.DualGateMode = dualGate && string.Equals(settings.ExitMode, "facial", StringComparison.OrdinalIgnoreCase);
+
             var presence = _services.GetRequiredService<PresenceService>();
             presence.EntryOnlyMode = flow.EntryOnlyMode;
+            presence.DualGateMode = flow.DualGateMode;
+            presence.FreeGateMode = settings.FreeGateMode;
+            flow.FreeGateMode = settings.FreeGateMode;
+
+            if (dualGate && !flow.DualGateMode)
+            {
+                _logger?.Warning(
+                    $"Câmera saída={settings.WebcamIndexExit} configurada mas exitMode={settings.ExitMode} — " +
+                    "saída facial desligada. Use exitMode=facial ou reinicie após salvar appsettings.");
+            }
+            if (settings.FreeGateMode)
+            {
+                _logger?.Information(
+                    "FreeGateMode=ON — facial registra entrada/saída sem validar presença (piloto catraca livre).");
+            }
             presence.RecognitionCooldown = TimeSpan.FromSeconds(
                 settings.RecognitionCooldownSec <= 0 ? 3 : settings.RecognitionCooldownSec);
+            presence.StalePendingThreshold = flow.PassageTimeout + TimeSpan.FromSeconds(2);
             presence.VisitMaxDuration = TimeSpan.FromHours(settings.VisitMaxHours <= 0 ? 12 : settings.VisitMaxHours);
 
             var attendantSession = _services.GetRequiredService<AttendantSessionService>();
@@ -167,6 +210,9 @@ public partial class App : System.Windows.Application
 
             Boot("StartBackgroundSync");
             _services.GetRequiredService<BackgroundSyncService>().Start();
+
+            Boot("StartUpdateService");
+            StartUpdateService();
 
             Boot("resolve MainWindow");
             var main = _services.GetRequiredService<MainWindow>();
@@ -257,15 +303,16 @@ public partial class App : System.Windows.Application
     {
         try
         {
-            var webcam = _services!.GetRequiredService<WebcamService>();
-            if (!webcam.IsRunning)
+            var lanes = _services!.GetRequiredService<WebcamLaneHost>();
+            lanes.Start(settings);
+
+            if (lanes.DualGateEnabled)
             {
-                webcam.Configure(
-                    settings.CameraWidth,
-                    settings.CameraHeight,
-                    settings.CameraFps,
-                    settings.ProcessFps);
-                webcam.Start(settings.WebcamIndex, settings.CameraDeviceId);
+                var exitOk = lanes.WaitForExitCamera(TimeSpan.FromSeconds(8));
+                _logger?.Information(
+                    exitOk
+                        ? $"Exit camera {settings.WebcamIndexExit} connected (frames={lanes.Exit.FramesCaptured})."
+                        : $"Exit camera {settings.WebcamIndexExit} NOT connected — state={lanes.Exit.State}, error={lanes.Exit.LastOpenError ?? "—"}");
             }
         }
         catch (Exception ex)
@@ -280,15 +327,67 @@ public partial class App : System.Windows.Application
         try
         {
             var services = _services!;
-            var webcam = services.GetRequiredService<WebcamService>();
-            var engine = services.GetRequiredService<AutomaticAccessEngine>();
-            engine.BindCamera(() => webcam.GetJpegFrame(), () => webcam.HasMotion());
-            engine.Start();
+            var lanes = services.GetRequiredService<WebcamLaneHost>();
+            var gates = services.GetRequiredService<GateLaneEngineHost>();
+            var settings = services.GetRequiredService<AppSettings>();
+            var flow = services.GetRequiredService<AccessFlowService>();
+            var presence = services.GetRequiredService<PresenceService>();
+
+            var dualFacial = lanes.DualGateEnabled
+                               && string.Equals(settings.ExitMode, "facial", StringComparison.OrdinalIgnoreCase);
+            flow.EntryOnlyMode = !dualFacial;
+            flow.DualGateMode = dualFacial;
+            presence.EntryOnlyMode = flow.EntryOnlyMode;
+            presence.DualGateMode = dualFacial;
+            presence.FreeGateMode = settings.FreeGateMode;
+            flow.FreeGateMode = settings.FreeGateMode;
+
+            var face = services.GetRequiredService<IFaceRecognitionService>() as LocalHistogramFaceService;
+            if (face is not null)
+                _logger?.Information($"Face engine ready: model={face.ModelVersion}.");
+
+            gates.ConfigureDualGate(dualFacial);
+            var successDisplay = TimeSpan.FromSeconds(
+                settings.PassageSuccessDisplaySec <= 0 ? 5 : settings.PassageSuccessDisplaySec);
+            var releaseMinDisplay = TimeSpan.FromSeconds(
+                settings.PassageReleaseMinDisplaySec <= 0 ? 3 : settings.PassageReleaseMinDisplaySec);
+            gates.BindCameras(
+                () => lanes.Entry.GetJpegFrame(),
+                () => lanes.Entry.HasMotion(),
+                lanes.DualGateEnabled
+                    ? () => lanes.Exit.GetJpegFrame()
+                    : null,
+                lanes.DualGateEnabled
+                    ? () => lanes.Exit.HasMotion()
+                    : null);
+            gates.ConfigureKioskDisplay(successDisplay, releaseMinDisplay);
+            gates.Start();
+
+            _logger?.Information(
+                $"Gate lanes: entry cam={settings.WebcamIndex} state={lanes.Entry.State}, " +
+                $"exit cam={settings.WebcamIndexExit} state={lanes.Exit.State}, " +
+                $"dualFacial={dualFacial}, exitMode={settings.ExitMode}, freeGate={settings.FreeGateMode}, " +
+                $"exitEngine={dualFacial && lanes.Exit.State == WebcamConnectionState.Connected}");
         }
         catch (Exception ex)
         {
             Boot($"engine skip: {ex.Message}");
             _logger?.Error($"Automatic engine failed to start: {ex.Message}");
+        }
+    }
+
+    private void StartUpdateService()
+    {
+        try
+        {
+            var svc = _services!.GetRequiredService<UpdateService>();
+            svc.Start();
+            _logger?.Information($"UpdateService started (app version {svc.CurrentVersion}).");
+        }
+        catch (Exception ex)
+        {
+            Boot($"update service skip: {ex.Message}");
+            _logger?.Warning($"UpdateService skipped: {ex.Message}");
         }
     }
 
@@ -332,8 +431,8 @@ public partial class App : System.Windows.Application
             _tray?.Dispose();
             _tray = null;
 
-            var engine = _services?.GetService<AutomaticAccessEngine>();
-            engine?.DisposeAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
+            var gates = _services?.GetService<GateLaneEngineHost>();
+            gates?.DisposeAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
 
             var visitExpiry = _services?.GetService<VisitExpiryService>();
             visitExpiry?.DisposeAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
@@ -344,7 +443,10 @@ public partial class App : System.Windows.Application
             var sync = _services?.GetService<BackgroundSyncService>();
             sync?.DisposeAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
 
-            _services?.GetService<WebcamService>()?.Dispose();
+            var updateSvc = _services?.GetService<UpdateService>();
+            updateSvc?.DisposeAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
+
+            _services?.GetService<WebcamLaneHost>()?.Dispose();
             _services?.GetService<ShellViewModel>()?.Dispose();
             _services?.GetService<AttendantShellViewModel>()?.Dispose();
             _services?.GetService<PublicKioskViewModel>()?.Dispose();

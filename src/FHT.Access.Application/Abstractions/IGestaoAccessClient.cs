@@ -4,6 +4,15 @@ namespace FHT.Access.Application.Abstractions;
 
 public interface IGestaoAccessClient
 {
+    /// <summary>
+    /// Consulta o canal de atualização do device na Gestão.
+    /// Retorna null se nenhuma versão nova estiver disponível ou o endpoint não existir.
+    /// </summary>
+    Task<UpdateChannelDto?> GetUpdateChannelAsync(
+        string unitId,
+        string deviceId,
+        string appVersion,
+        CancellationToken ct = default);
     Task<DeviceAuthResult> AuthenticateDeviceAsync(
         string deviceId,
         string deviceSecret,

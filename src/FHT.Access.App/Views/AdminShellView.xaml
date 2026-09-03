@@ -32,6 +32,14 @@
                         <TextBlock Text="Admin PIN" Style="{StaticResource SectionLabel}" />
                         <TextBox Text="{Binding AdminPin, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource QuietTextBox}" />
                         <CheckBox Content="Kiosk portrait" IsChecked="{Binding KioskPortrait}" Style="{StaticResource QuietCheckBox}" />
+                        <CheckBox Content="Iniciar com o Windows"
+                                  IsChecked="{Binding StartWithWindows}"
+                                  Style="{StaticResource QuietCheckBox}"
+                                  ToolTip="Registra o FHT Acesso em HKCU\...\Run para abrir após o login." />
+                        <TextBlock Text="Os dados (serial, IP, device, PIN) ficam em %ProgramData%\FHT\Access\appsettings.json"
+                                   Style="{StaticResource MutedText}"
+                                   Margin="0,8,0,4"
+                                   TextWrapping="Wrap" />
                         <Button Content="Salvar" Style="{StaticResource QuietButton}" Command="{Binding SaveGeralCommand}" />
                     </StackPanel>
                 </ScrollViewer>
@@ -68,8 +76,22 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <StackPanel>
-                        <TextBlock Text="Camera index" Style="{StaticResource SectionLabel}" />
+                        <TextBlock Text="Camera index (entrada)" Style="{StaticResource SectionLabel}" />
                         <TextBox Text="{Binding WebcamIndex, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource QuietTextBox}" />
+                        <TextBlock Text="Camera index (saída, -1 = desligada)" Style="{StaticResource SectionLabel}" Margin="0,8,0,0" />
+                        <TextBox Text="{Binding WebcamIndexExit, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource QuietTextBox}" />
+                        <TextBlock Text="Modo saída (free | facial)" Style="{StaticResource SectionLabel}" Margin="0,8,0,0" />
+                        <TextBox Text="{Binding ExitMode, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource QuietTextBox}" />
+                        <CheckBox Content="Catraca livre (registrar sem validar presença)"
+                                  IsChecked="{Binding FreeGateMode}"
+                                  Margin="0,10,0,0"
+                                  Foreground="{StaticResource TextPrimaryBrush}" />
+                        <TextBlock Text="Com catraca livre: entrada/saída facial só registram, sem bloquear reentrada ou saída sem entrada. Plano e facial desconhecida seguem iguais."
+                                   TextWrapping="Wrap"
+                                   Opacity="0.7"
+                                   FontSize="11"
+                                   Margin="0,4,0,0"
+                                   Foreground="{StaticResource TextPrimaryBrush}" />
                         <WrapPanel>
                             <Button Content="Start" Style="{StaticResource QuietButton}" Command="{Binding StartWebcamCommand}" />
                             <Button Content="Stop" Style="{StaticResource QuietButton}" Command="{Binding StopWebcamCommand}" />
@@ -100,10 +122,23 @@
                     <TextBlock Text="Threshold" Style="{StaticResource SectionLabel}" />
                     <TextBox Text="{Binding FaceThreshold, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource QuietTextBox}" />
                     <WrapPanel>
-                        <Button Content="Enroll selected" Style="{StaticResource QuietButton}" Command="{Binding EnrollCommand}" />
+                        <Button Content="Cadastrar facial" Style="{StaticResource QuietButton}" Command="{Binding EnrollCommand}" />
+                        <Button Content="Remover facial" Style="{StaticResource QuietButton}" Command="{Binding RemoveFaceCommand}" />
                         <Button Content="Identify test" Style="{StaticResource QuietButton}" Command="{Binding IdentifyTestCommand}" />
                     </WrapPanel>
-                    <TextBlock Text="{Binding FaceStatus}" Style="{StaticResource MutedText}" Margin="0,8,0,0" />
+                    <TextBlock Margin="0,8,0,0">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource MutedText}">
+                                <Setter Property="Text" Value="Este aluno não tem facial cadastrada." />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SelectedMemberHasFace}" Value="True">
+                                        <Setter Property="Text" Value="Facial cadastrada neste totem." />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Text="{Binding FaceStatus}" Style="{StaticResource MutedText}" Margin="0,4,0,0" />
                 </StackPanel>
             </TabItem>
 
@@ -122,9 +157,14 @@
                         <TextBox Text="{Binding TurnstileIp, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource QuietTextBox}" />
                         <TextBlock Text="Serial" Style="{StaticResource SectionLabel}" />
                         <TextBox Text="{Binding TurnstileSerial, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource QuietTextBox}" />
+                        <TextBlock Text="Salve em Geral ou use Connect — serial/IP ficam persistidos no disco."
+                                   Style="{StaticResource MutedText}"
+                                   Margin="0,4,0,8"
+                                   TextWrapping="Wrap" />
                         <WrapPanel>
                             <Button Content="Connect" Style="{StaticResource QuietButton}" Command="{Binding ConnectTurnstileCommand}" />
                             <Button Content="Disconnect" Style="{StaticResource QuietButton}" Command="{Binding DisconnectTurnstileCommand}" />
+                            <Button Content="Salvar catraca" Style="{StaticResource QuietButton}" Command="{Binding SaveGeralCommand}" />
                         </WrapPanel>
                         <WrapPanel>
                             <Button Content="Liberar Entrada" Style="{StaticResource QuietButton}" Command="{Binding ReleaseEntryCommand}" />
@@ -174,6 +214,26 @@
                     <TextBlock Margin="0,16,0,0" Style="{StaticResource SectionLabel}" Text="Base URL" />
                     <TextBlock Text="{Binding GestaoBaseUrl}" TextWrapping="Wrap" />
                 </StackPanel>
+            </TabItem>
+
+            <!-- Atualização -->
+            <TabItem Header="Atualização">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel MaxWidth="520" HorizontalAlignment="Left">
+                        <TextBlock Text="Versão instalada" Style="{StaticResource SectionLabel}" />
+                        <TextBlock Text="{Binding AppVersion}" />
+                        <TextBlock Text="Status" Style="{StaticResource SectionLabel}" Margin="0,16,0,0" />
+                        <TextBlock Text="{Binding UpdateStatusText}" TextWrapping="Wrap" />
+                        <Button Content="Verificar atualização agora"
+                                Style="{StaticResource QuietButton}"
+                                Command="{Binding CheckUpdateCommand}"
+                                Margin="0,16,0,0" />
+                        <TextBlock Text="A atualização automática ocorre fora do expediente (20h–5h) ou quando obrigatória."
+                                   Style="{StaticResource MutedText}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,12,0,0" />
+                    </StackPanel>
+                </ScrollViewer>
             </TabItem>
 
             <!-- Diagnóstico -->

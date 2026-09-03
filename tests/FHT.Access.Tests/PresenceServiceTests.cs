@@ -126,4 +126,124 @@ public sealed class PresenceServiceTests
         Assert.NotNull(visitId);
         Assert.Equal(PresenceStateKind.Inside, presence.State);
     }
+
+    [Fact]
+    public async Task DualGate_blocks_double_entry_unless_free_gate()
+    {
+        var personId = Guid.NewGuid();
+        var unitId = "unit-1";
+        var presence = new PersonPresenceState
+        {
+            PersonId = personId,
+            UnitId = unitId,
+            State = PresenceStateKind.Inside,
+            Version = 1,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        var presenceRepo = new Mock<IPresenceRepository>();
+        presenceRepo.Setup(r => r.GetAsync(personId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => presence);
+
+        var svc = new PresenceService(
+            presenceRepo.Object,
+            Mock.Of<IAccessAttemptRepository>(),
+            Mock.Of<IVisitRepository>(),
+            Mock.Of<IPresenceCorrectionRepository>(),
+            Mock.Of<IAccessEventRepository>())
+        {
+            DualGateMode = true,
+            EntryOnlyMode = false,
+            FreeGateMode = false
+        };
+
+        var (blocked, reason) = await svc.TryBeginRecognitionAsync(
+            personId, unitId, AccessDirection.Entry);
+        Assert.False(blocked);
+        Assert.Contains("já está dentro", reason);
+
+        svc.FreeGateMode = true;
+        var (allowed, freeReason) = await svc.TryBeginRecognitionAsync(
+            personId, unitId, AccessDirection.Entry);
+        Assert.True(allowed);
+        Assert.Null(freeReason);
+    }
+
+    [Fact]
+    public async Task DualGate_blocks_exit_without_entry_unless_free_gate()
+    {
+        var personId = Guid.NewGuid();
+        var unitId = "unit-1";
+        var presence = new PersonPresenceState
+        {
+            PersonId = personId,
+            UnitId = unitId,
+            State = PresenceStateKind.Outside,
+            Version = 0,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        var presenceRepo = new Mock<IPresenceRepository>();
+        presenceRepo.Setup(r => r.GetAsync(personId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => presence);
+
+        var svc = new PresenceService(
+            presenceRepo.Object,
+            Mock.Of<IAccessAttemptRepository>(),
+            Mock.Of<IVisitRepository>(),
+            Mock.Of<IPresenceCorrectionRepository>(),
+            Mock.Of<IAccessEventRepository>())
+        {
+            DualGateMode = true,
+            EntryOnlyMode = false,
+            FreeGateMode = false
+        };
+
+        var (blocked, reason) = await svc.TryBeginRecognitionAsync(
+            personId, unitId, AccessDirection.Exit);
+        Assert.False(blocked);
+        Assert.Contains("não está registrado como dentro", reason);
+
+        svc.FreeGateMode = true;
+        var (allowed, freeReason) = await svc.TryBeginRecognitionAsync(
+            personId, unitId, AccessDirection.Exit);
+        Assert.True(allowed);
+        Assert.Null(freeReason);
+    }
+
+    [Fact]
+    public async Task DualGate_allows_staff_bypass_presence_without_free_gate()
+    {
+        var personId = Guid.NewGuid();
+        var unitId = "unit-1";
+        var presence = new PersonPresenceState
+        {
+            PersonId = personId,
+            UnitId = unitId,
+            State = PresenceStateKind.Inside,
+            Version = 1,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        var presenceRepo = new Mock<IPresenceRepository>();
+        presenceRepo.Setup(r => r.GetAsync(personId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => presence);
+
+        var svc = new PresenceService(
+            presenceRepo.Object,
+            Mock.Of<IAccessAttemptRepository>(),
+            Mock.Of<IVisitRepository>(),
+            Mock.Of<IPresenceCorrectionRepository>(),
+            Mock.Of<IAccessEventRepository>())
+        {
+            DualGateMode = true,
+            EntryOnlyMode = false,
+            FreeGateMode = false
+        };
+
+        var (allowed, reason) = await svc.TryBeginRecognitionAsync(
+            personId, unitId, AccessDirection.Entry, bypassPresence: true);
+        Assert.True(allowed);
+        Assert.Null(reason);
+    }
 }

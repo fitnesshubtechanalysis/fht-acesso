@@ -59,11 +59,11 @@ public static class DependencyInjection
 
         services.AddSingleton<RecognitionSessionGuard>();
 
-        services.AddSingleton<AutomaticAccessEngine>();
+        services.AddSingleton<GateLaneEngineHost>();
 
         services.AddSingleton<AttendantSessionService>();
 
-
+        // UpdateService is registered in the App layer (needs platform-specific IAppUpdater and options).
 
         return services;
 

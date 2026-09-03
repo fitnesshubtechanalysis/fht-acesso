@@ -21,12 +21,5 @@
 
     <Grid>
         <ContentControl Content="{Binding CurrentViewModel}" />
-
-        <!-- Corner tap hot-zone (bottom-right) opens the attendant login -->
-        <Border Width="48" Height="48"
-                HorizontalAlignment="Right"
-                VerticalAlignment="Bottom"
-                Background="Transparent"
-                MouseLeftButtonDown="AttendantCorner_Click" />
     </Grid>
 </Window>

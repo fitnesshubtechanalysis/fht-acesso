@@ -28,10 +28,21 @@ public sealed class PresenceService
     private readonly ConcurrentDictionary<Guid, DateTime> _cooldownUntil = new();
 
     public TimeSpan RecognitionCooldown { get; set; } = TimeSpan.FromSeconds(3);
+    /// <summary>Auto-clear stuck EntryPending/ExitPending (align with passage timeout).</summary>
+    public TimeSpan StalePendingThreshold { get; set; } = TimeSpan.FromSeconds(12);
     public TimeSpan VisitMaxDuration { get; set; } = TimeSpan.FromHours(12);
 
     /// <summary>Piloto: saída livre — presença estimada, sempre libera entrada.</summary>
     public bool EntryOnlyMode { get; set; } = true;
+
+    /// <summary>Duas câmeras — direção fixa por lane (entrada/saída).</summary>
+    public bool DualGateMode { get; set; }
+
+    /// <summary>
+    /// Piloto: catraca livre — facial registra entrada/saída sem validar presença
+    /// (permite reentrada, saída sem entrada prévia, etc.).
+    /// </summary>
+    public bool FreeGateMode { get; set; }
 
     public PresenceService(
         IPresenceRepository presence,
@@ -75,6 +86,8 @@ public sealed class PresenceService
     public async Task<(bool Allowed, string? BlockReason)> TryBeginRecognitionAsync(
         Guid personId,
         string unitId,
+        AccessDirection? forcedDirection = null,
+        bool bypassPresence = false,
         CancellationToken ct = default)
     {
         var gate = await _personLocks.GetOrAdd(personId, _ => new SemaphoreSlim(1, 1))
@@ -83,22 +96,57 @@ public sealed class PresenceService
             return (false, "Aguarde — processando acesso anterior.");
 
         try
-        {
-            if (_cooldownUntil.TryGetValue(personId, out var until) && until > DateTime.UtcNow)
-                return (false, null);
+            {
+                if (_cooldownUntil.TryGetValue(personId, out var until) && until > DateTime.UtcNow)
+                    return (false, "Aguarde alguns segundos e tente de novo.");
 
-            var p = await GetOrCreateAsync(personId, unitId, ct).ConfigureAwait(false);
-            if (p.State is PresenceStateKind.EntryPending or PresenceStateKind.ExitPending)
-                return (false, null);
+                var p = await GetOrCreateAsync(personId, unitId, ct).ConfigureAwait(false);
 
-            if (!EntryOnlyMode && p.State == PresenceStateKind.Unknown)
-                return (false, "Estado de presença indefinido — procure a recepção.");
+                // Stuck pending (release/connect failed) must not block forever.
+                if (p.State is PresenceStateKind.EntryPending or PresenceStateKind.ExitPending)
+                {
+                    var stale = p.UpdatedAt == default
+                        || DateTime.UtcNow - p.UpdatedAt > StalePendingThreshold;
+                    if (stale)
+                    {
+                        _log?.Warning(
+                            $"[Presence] Clearing stale {p.State} for person={personId}");
+                        p.State = p.State == PresenceStateKind.EntryPending
+                            ? PresenceStateKind.Outside
+                            : PresenceStateKind.Inside;
+                        p.PendingAttemptId = null;
+                        p.Version++;
+                        p.UpdatedAt = DateTime.UtcNow;
+                        await _presence.UpsertAsync(p, ct).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        return (false, "Aguarde a passagem na catraca.");
+                    }
+                }
 
-            if (!await _turnstileLock.WaitAsync(0, ct).ConfigureAwait(false))
-                return (false, "Catraca aguardando passagem.");
+                var skipPresenceRules = FreeGateMode || bypassPresence;
 
-            return (true, null);
-        }
+                if (!skipPresenceRules && !EntryOnlyMode && p.State == PresenceStateKind.Unknown)
+                    return (false, "Estado de presença indefinido — procure a recepção.");
+
+                if (!skipPresenceRules
+                    && DualGateMode
+                    && forcedDirection == AccessDirection.Exit
+                    && p.State != PresenceStateKind.Inside)
+                    return (false, "Saída não permitida — você não está registrado como dentro.");
+
+                if (!skipPresenceRules
+                    && DualGateMode
+                    && forcedDirection == AccessDirection.Entry
+                    && p.State == PresenceStateKind.Inside)
+                    return (false, "Entrada não permitida — você já está dentro.");
+
+                if (!await _turnstileLock.WaitAsync(0, ct).ConfigureAwait(false))
+                    return (false, "Catraca aguardando passagem.");
+
+                return (true, null);
+            }
         finally
         {
             _personLocks.GetOrAdd(personId, _ => new SemaphoreSlim(1, 1)).Release();
@@ -116,12 +164,17 @@ public sealed class PresenceService
         string source,
         string? deviceId,
         string? turnstileSerial,
+        AccessDirection? forcedDirection = null,
         CancellationToken ct = default)
     {
         var p = await GetOrCreateAsync(personId, unitId, ct).ConfigureAwait(false);
-        var direction = EntryOnlyMode
-            ? AccessDirection.Entry
-            : p.State switch
+        AccessDirection? direction;
+        if (DualGateMode && forcedDirection is not null)
+            direction = forcedDirection;
+        else if (EntryOnlyMode)
+            direction = AccessDirection.Entry;
+        else
+            direction = p.State switch
             {
                 PresenceStateKind.Outside => AccessDirection.Entry,
                 PresenceStateKind.Inside => AccessDirection.Exit,
@@ -301,7 +354,7 @@ public sealed class PresenceService
             visitId: null,
             ct).ConfigureAwait(false);
 
-        _cooldownUntil[attempt.PersonId] = DateTime.UtcNow.Add(RecognitionCooldown);
+        // No per-person cooldown — allow immediate re-recognition after missed passage.
         try { _turnstileLock.Release(); } catch { /* ignore */ }
 
         _log?.Warning($"[Presence] Timeout {attempt.RequestedDirection} person={attempt.PersonId}");

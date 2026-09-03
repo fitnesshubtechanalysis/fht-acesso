@@ -28,7 +28,25 @@ public sealed class PresenceBootstrapService
         var existing = await _presence.GetAllAsync(ct).ConfigureAwait(false);
         if (existing.Count > 0)
         {
-            _log?.Information($"[Presence] Loaded {existing.Count} presence row(s) from DB.");
+            var cleared = 0;
+            foreach (var p in existing)
+            {
+                if (p.State is not (PresenceStateKind.EntryPending or PresenceStateKind.ExitPending))
+                    continue;
+
+                p.State = p.State == PresenceStateKind.EntryPending
+                    ? PresenceStateKind.Outside
+                    : PresenceStateKind.Inside;
+                p.PendingAttemptId = null;
+                p.Version++;
+                p.UpdatedAt = DateTime.UtcNow;
+                await _presence.UpsertAsync(p, ct).ConfigureAwait(false);
+                cleared++;
+            }
+
+            _log?.Information(
+                $"[Presence] Loaded {existing.Count} presence row(s) from DB" +
+                (cleared > 0 ? $"; cleared {cleared} stale pending." : "."));
             return;
         }
 

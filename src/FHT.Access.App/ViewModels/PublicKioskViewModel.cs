@@ -8,20 +8,22 @@ using FHT.Access.Domain.Enums;
 using FHT.Access.Infrastructure.Settings;
 
 namespace FHT.Access.App.ViewModels;
+#pragma warning disable CA1859 // Use concrete type for UpdateService — injected as singleton
 
 /// <summary>
 /// Public (student facing) screen. Pure observer of <see cref="AccessStateMachine"/> —
-/// recognition itself is driven by <see cref="AutomaticAccessEngine"/>.
+/// recognition itself is driven by <see cref="GateLaneEngineHost"/>.
 /// </summary>
 public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
 {
     private const string IdleHeadline = "Aproxime-se da câmera para iniciar.";
     private static readonly CultureInfo PtBr = CultureInfo.GetCultureInfo("pt-BR");
 
-    private readonly WebcamService _webcam;
+    private readonly WebcamLaneHost _lanes;
     private readonly AccessStateMachine _states;
-    private readonly AutomaticAccessEngine _engine;
+    private readonly GateLaneEngineHost _gates;
     private readonly AppSettings _settings;
+    private readonly UpdateService _updateService;
     private readonly Dispatcher _dispatcher;
     private readonly DispatcherTimer _clockTimer;
 
@@ -36,17 +38,27 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
     private bool _subscribed;
     private bool _disposed;
 
+    // Update overlay state
+    private UpdateUiState _updateState = UpdateUiState.None;
+    private int _updateCountdown;
+    private int _updateDownloadPercent;
+    private string _updateVersionLabel = string.Empty;
+
     public PublicKioskViewModel(
-        WebcamService webcam,
+        WebcamLaneHost lanes,
         AccessStateMachine states,
-        AutomaticAccessEngine engine,
-        AppSettings settings)
+        GateLaneEngineHost gates,
+        AppSettings settings,
+        UpdateService updateService)
     {
-        _webcam = webcam;
+        _lanes = lanes;
         _states = states;
-        _engine = engine;
+        _gates = gates;
         _settings = settings;
+        _updateService = updateService;
         _dispatcher = System.Windows.Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
+
+        _updateService.StateChanged += OnUpdateStateChanged;
 
         _clockTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _clockTimer.Tick += (_, _) => RefreshClock();
@@ -54,11 +66,13 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
         RefreshOnlineStatus();
 
         _states.StateChanged += OnStateChanged;
+        _states.ActiveLaneChanged += OnActiveLaneChanged;
 
         EnrollFaceCommand = new RelayCommand(() => RequestAttendantFromKiosk?.Invoke(AttendantIntent.Enroll));
         CallAttendantCommand = new RelayCommand(() => RequestAttendantFromKiosk?.Invoke(AttendantIntent.Browse));
+        OpenAttendantCommand = new RelayCommand(() => RequestAttendantFromKiosk?.Invoke(AttendantIntent.Browse));
         EmergencyReleaseCommand = new RelayCommand(() => RequestAttendantFromKiosk?.Invoke(AttendantIntent.ManualRelease));
-        TryAgainCommand = new RelayCommand(() => _engine.RetryFromKiosk());
+        TryAgainCommand = new RelayCommand(() => _gates.RetryFromKiosk());
 
         ApplyState(_states.State);
     }
@@ -67,6 +81,7 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
 
     public ICommand EnrollFaceCommand { get; }
     public ICommand CallAttendantCommand { get; }
+    public ICommand OpenAttendantCommand { get; }
     public ICommand EmergencyReleaseCommand { get; }
     public ICommand TryAgainCommand { get; }
 
@@ -148,6 +163,63 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
         }
     }
 
+    // ── Update overlay ───────────────────────────────────────────────────────
+
+    public UpdateUiState UpdateState
+    {
+        get => _updateState;
+        private set
+        {
+            if (SetProperty(ref _updateState, value))
+            {
+                OnPropertyChanged(nameof(IsUpdateOverlayVisible));
+                OnPropertyChanged(nameof(IsUpdateCountdown));
+                OnPropertyChanged(nameof(IsUpdateDownloading));
+                OnPropertyChanged(nameof(IsUpdateApplying));
+                OnPropertyChanged(nameof(IsUpdateAvailableBanner));
+            }
+        }
+    }
+
+    public bool IsUpdateOverlayVisible => _updateState is UpdateUiState.Countdown
+        or UpdateUiState.Downloading
+        or UpdateUiState.Applying;
+
+    public bool IsUpdateAvailableBanner => _updateState == UpdateUiState.Available;
+
+    public bool IsUpdateCountdown => _updateState == UpdateUiState.Countdown;
+    public bool IsUpdateDownloading => _updateState == UpdateUiState.Downloading;
+    public bool IsUpdateApplying => _updateState == UpdateUiState.Applying;
+
+    public int UpdateCountdown
+    {
+        get => _updateCountdown;
+        private set => SetProperty(ref _updateCountdown, value);
+    }
+
+    public int UpdateDownloadPercent
+    {
+        get => _updateDownloadPercent;
+        private set => SetProperty(ref _updateDownloadPercent, value);
+    }
+
+    public string UpdateVersionLabel
+    {
+        get => _updateVersionLabel;
+        private set => SetProperty(ref _updateVersionLabel, value);
+    }
+
+    private void OnUpdateStateChanged(object? sender, EventArgs e)
+    {
+        _ = _dispatcher.BeginInvoke(() =>
+        {
+            UpdateState = _updateService.State;
+            UpdateCountdown = _updateService.CountdownRemaining;
+            UpdateDownloadPercent = _updateService.DownloadPercent;
+            UpdateVersionLabel = _updateService.AvailableVersion is { } v ? $"v{v}" : string.Empty;
+        });
+    }
+
     public void Start()
     {
         if (_disposed)
@@ -160,7 +232,9 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
             return;
 
         _subscribed = true;
-        _webcam.FrameReady += OnFrameReady;
+        _lanes.Entry.FrameReady += OnFrameReady;
+        if (_lanes.DualGateEnabled)
+            _lanes.Exit.FrameReady += OnFrameReady;
         RefreshOnlineStatus();
     }
 
@@ -170,7 +244,8 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
             return;
 
         _subscribed = false;
-        _webcam.FrameReady -= OnFrameReady;
+        _lanes.Entry.FrameReady -= OnFrameReady;
+        _lanes.Exit.FrameReady -= OnFrameReady;
     }
 
     public void SetOnline(bool online) => IsOnline = online;
@@ -196,6 +271,8 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
 
         _disposed = true;
         _states.StateChanged -= OnStateChanged;
+        _states.ActiveLaneChanged -= OnActiveLaneChanged;
+        _updateService.StateChanged -= OnUpdateStateChanged;
         _clockTimer.Stop();
         StopCaptureSubscription();
     }
@@ -203,27 +280,42 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
     private void OnStateChanged(object? sender, AccessUiState state)
         => _ = _dispatcher.BeginInvoke(() => ApplyState(state));
 
+    private void OnActiveLaneChanged(object? sender, EventArgs e)
+        => _ = _dispatcher.BeginInvoke(() =>
+            _lanes.SetActivePreviewLane(_states.ActiveLane == AccessDirection.Exit));
+
     private void ApplyState(AccessUiState state)
     {
         UiState = state;
         MemberName = _states.MemberDisplayName ?? string.Empty;
-        ResultMessage = BuildResultMessage(state, _states.StatusMessage, _states.MemberDisplayName);
+        ResultMessage = BuildResultMessage(state, _states.StatusMessage, _states.MemberDisplayName, _states.ActiveLane);
     }
 
-    private static string BuildResultMessage(AccessUiState state, string? statusMessage, string? memberName)
+    private static string BuildResultMessage(
+        AccessUiState state,
+        string? statusMessage,
+        string? memberName,
+        AccessDirection? lane)
     {
         if (!string.IsNullOrWhiteSpace(statusMessage))
             return statusMessage;
 
         var name = string.IsNullOrWhiteSpace(memberName) ? null : memberName;
+        var isExit = lane == AccessDirection.Exit;
 
         return state switch
         {
             AccessUiState.Unknown =>
-                "Não foi possível identificar seu rosto.",
+                isExit
+                    ? "Não foi possível identificar seu rosto na saída."
+                    : "Não foi possível identificar seu rosto.",
             AccessUiState.Authorized or AccessUiState.WaitingPassage or AccessUiState.PassageConfirmed => name is null
-                ? "Entrada registrada.\nTenha um ótimo treino!"
-                : $"Olá, {name}!\n\nEntrada registrada.\nTenha um ótimo treino!",
+                ? isExit
+                    ? "Pode passar na saída."
+                    : "Pode passar na catraca."
+                : isExit
+                    ? $"Olá, {name}!\n\nPode passar na saída."
+                    : $"Olá, {name}!\n\nPode passar na catraca.",
             AccessUiState.Denied => AccessDecisionEvaluator.PublicReception,
             _ => string.Empty
         };
@@ -239,6 +331,9 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
 
     private void OnFrameReady(object? sender, WebcamFrameEventArgs e)
     {
+        if (sender is WebcamService src && src != _lanes.ActivePreview)
+            return;
+
         var bitmap = e.Bitmap;
         _ = _dispatcher.BeginInvoke(() => Preview = bitmap);
     }

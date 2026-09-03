@@ -77,14 +77,57 @@
                         </StackPanel>
                     </Grid>
                 </Border>
+
+                <!-- Modo atendente: discreto, semi-transparente, canto inferior direito (acima do rodapé) -->
+                <Button Command="{Binding OpenAttendantCommand}"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Bottom"
+                        Margin="0,0,18,72"
+                        Cursor="Hand"
+                        ToolTip="Modo atendente"
+                        Opacity="0.55">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd"
+                                    Background="#99000000"
+                                    BorderBrush="#66FFFFFF"
+                                    BorderThickness="1"
+                                    CornerRadius="18"
+                                    Padding="14,10">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE77B;"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               FontSize="16"
+                                               Foreground="White"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,8,0" />
+                                    <TextBlock Text="Modo atendente"
+                                               FontSize="13"
+                                               FontWeight="SemiBold"
+                                               Foreground="White"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#CC1A1A1A" />
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="#AAF15A29" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Bd" Property="Opacity" Value="0.85" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
             </Grid>
 
             <!-- ===================== RECOGNITION ===================== -->
-            <Grid Visibility="{Binding IsCameraActive, Converter={StaticResource BoolToVis}}">
+            <Grid Visibility="{Binding IsCameraActive, Converter={StaticResource BoolToVis}}" Background="#000000">
+                <!-- UniformToFill: webcam 16:9 preenche o totem 9:16 (corta laterais, fica vertical). -->
                 <Image Source="{Binding Preview}" Stretch="UniformToFill"
                        HorizontalAlignment="Center" VerticalAlignment="Center"
                        RenderOptions.BitmapScalingMode="HighQuality" />
-                <Rectangle Fill="#73000000" />
 
                 <Grid>
                     <Grid.RowDefinitions>
@@ -524,6 +567,69 @@
                                HorizontalAlignment="Center" Margin="0,56,0,0" />
                 </StackPanel>
             </Grid>
+
+            <!-- ===================== UPDATE BANNER (disponível, aguardando janela) ===================== -->
+            <Border VerticalAlignment="Bottom"
+                    Height="56"
+                    Background="#CC1A1A1A"
+                    Visibility="{Binding IsUpdateAvailableBanner, Converter={StaticResource BoolToVis}}">
+                <TextBlock VerticalAlignment="Center" HorizontalAlignment="Center"
+                           FontSize="20" Foreground="#F5A623"
+                           Text="{Binding UpdateVersionLabel, StringFormat='Nova versão {0} disponível — atualização agendada fora do expediente.'}" />
+            </Border>
+
+            <!-- ===================== UPDATE OVERLAY (countdown / download / apply) ===================== -->
+            <Grid Background="#F2000000"
+                  Visibility="{Binding IsUpdateOverlayVisible, Converter={StaticResource BoolToVis}}">
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="64,0">
+                    <Image Source="pack://application:,,,/Assets/logo-fht-acesso.png"
+                           Height="80" MaxWidth="280" Stretch="Uniform" HorizontalAlignment="Center"
+                           Margin="0,0,0,56" RenderOptions.BitmapScalingMode="HighQuality" />
+
+                    <!-- Countdown -->
+                    <StackPanel Visibility="{Binding IsUpdateCountdown, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Acesso pausado" FontSize="40" FontWeight="SemiBold"
+                                   Foreground="White" TextAlignment="Center" HorizontalAlignment="Center" />
+                        <TextBlock Text="Atualização em breve" FontSize="28"
+                                   Foreground="#AAAAAA" TextAlignment="Center" HorizontalAlignment="Center"
+                                   Margin="0,8,0,48" />
+                        <TextBlock Text="{Binding UpdateCountdown}" FontSize="120" FontWeight="Bold"
+                                   Foreground="#F5A623" TextAlignment="Center" HorizontalAlignment="Center" />
+                        <TextBlock Text="segundos" FontSize="24" Foreground="#AAAAAA"
+                                   TextAlignment="Center" HorizontalAlignment="Center" Margin="0,8,0,0" />
+                    </StackPanel>
+
+                    <!-- Downloading -->
+                    <StackPanel Visibility="{Binding IsUpdateDownloading, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Baixando atualização" FontSize="40" FontWeight="SemiBold"
+                                   Foreground="White" TextAlignment="Center" HorizontalAlignment="Center" />
+                        <TextBlock Text="Não desligue o totem" FontSize="24"
+                                   Foreground="#AAAAAA" TextAlignment="Center" HorizontalAlignment="Center"
+                                   Margin="0,8,0,48" />
+                        <TextBlock Text="{Binding UpdateDownloadPercent, StringFormat='{}{0}%'}"
+                                   FontSize="96" FontWeight="Bold"
+                                   Foreground="#00D17E" TextAlignment="Center" HorizontalAlignment="Center" />
+                        <ProgressBar Value="{Binding UpdateDownloadPercent}" Maximum="100"
+                                     Width="480" Height="12" Margin="0,24,0,0"
+                                     Foreground="#00D17E" Background="#333333" />
+                    </StackPanel>
+
+                    <!-- Applying -->
+                    <StackPanel Visibility="{Binding IsUpdateApplying, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Aplicando atualização" FontSize="40" FontWeight="SemiBold"
+                                   Foreground="White" TextAlignment="Center" HorizontalAlignment="Center" />
+                        <TextBlock Text="O totem reiniciará automaticamente" FontSize="24"
+                                   Foreground="#AAAAAA" TextAlignment="Center" HorizontalAlignment="Center"
+                                   Margin="0,8,0,0" />
+                    </StackPanel>
+
+                    <TextBlock Text="{Binding UpdateVersionLabel, StringFormat='Versão {0}'}"
+                               FontSize="20" Foreground="#555555"
+                               TextAlignment="Center" HorizontalAlignment="Center"
+                               Margin="0,48,0,0" />
+                </StackPanel>
+            </Grid>
+
         </Grid>
     </Viewbox>
 </UserControl>
