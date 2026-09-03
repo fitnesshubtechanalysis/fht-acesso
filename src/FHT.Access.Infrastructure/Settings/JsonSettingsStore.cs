@@ -195,9 +195,10 @@ public sealed class JsonSettingsStore : ISettingsStore
 
         var json = File.ReadAllText(_filePath);
         var settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? CreateDefaults();
-        if (settings.FaceMatchThreshold > 0.7)
+        ApplyDualCameraDefaults(settings);
+        if (settings.FaceMatchThreshold > 0.7 || settings.FaceMatchThreshold < 0.42)
         {
-            settings.FaceMatchThreshold = 0.35;
+            settings.FaceMatchThreshold = 0.48;
             WriteUnlocked(settings);
         }
 
@@ -231,18 +232,36 @@ public sealed class JsonSettingsStore : ISettingsStore
         {
             DataDirectory = dir,
             UseFakeTurnstile = true,
-            FaceMatchThreshold = 0.35,
+            FaceMatchThreshold = 0.48,
             AdminPin = "1234",
             KioskPortrait = true,
             CameraWidth = 1920,
             CameraHeight = 1080,
             CameraFps = 30,
             ProcessFps = 8,
-            PassageTimeoutSec = 10,
+            PassageTimeoutSec = 15,
+            PassageSuccessDisplaySec = 5,
+            PassageReleaseMinDisplaySec = 3,
             RecognitionCooldownSec = 3,
             VisitMaxHours = 12,
             StartupDelaySec = 8,
+            StartWithWindows = true,
             SyncState = new SyncStateSettings()
         };
+    }
+
+    /// <summary>
+    /// Two USB/indexes configured → default to facial exit (not free pass).
+    /// </summary>
+    private static void ApplyDualCameraDefaults(AppSettings settings)
+    {
+        if (settings.WebcamIndexExit < 0 || settings.WebcamIndexExit == settings.WebcamIndex)
+            return;
+
+        if (string.IsNullOrWhiteSpace(settings.ExitMode)
+            || string.Equals(settings.ExitMode, "free", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.ExitMode = "facial";
+        }
     }
 }

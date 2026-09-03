@@ -54,12 +54,22 @@ public sealed class AccessFlowService
         _log = log;
     }
 
-    public TimeSpan PassageTimeout { get; set; } = TimeSpan.FromSeconds(10);
+    public TimeSpan PassageTimeout { get; set; } = TimeSpan.FromSeconds(15);
     public string? DeviceId { get; set; }
     public string? OperatorId { get; set; }
 
     /// <summary>Piloto: saída livre — somente entrada usa facial.</summary>
     public bool EntryOnlyMode { get; set; } = true;
+
+    /// <summary>Duas câmeras no mesmo PC — entrada e saída com facial.</summary>
+    public bool DualGateMode { get; set; }
+
+    /// <summary>Catraca livre: não bloqueia por estado de presença (já dentro / sem entrada).</summary>
+    public bool FreeGateMode
+    {
+        get => _presence.FreeGateMode;
+        set => _presence.FreeGateMode = value;
+    }
 
     private string UnitId => _device.UnitId?.Trim() ?? string.Empty;
 
@@ -68,6 +78,7 @@ public sealed class AccessFlowService
 
     public async Task<AccessFlowResult> ProcessDeniedOnlyAsync(
         AccessDecision decision,
+        AccessDirection direction = AccessDirection.Entry,
         CancellationToken ct = default)
     {
         if (decision.MemberId is { } mid && decision.Kind == AccessDecisionKind.RequireReception)
@@ -75,7 +86,7 @@ public sealed class AccessFlowService
 
         var deniedEvent = await _events.RecordDeniedAsync(
             decision.MemberId,
-            AccessDirection.Entry,
+            direction,
             SourceFace,
             DeviceId,
             denialReason: decision.ReasonCode,
@@ -85,7 +96,7 @@ public sealed class AccessFlowService
         {
             Decision = decision,
             Event = deniedEvent,
-            Direction = AccessDirection.Entry,
+            Direction = direction,
             UiMessage = string.IsNullOrWhiteSpace(decision.PublicMessage)
                 ? AccessDecisionEvaluator.PublicReception
                 : decision.PublicMessage
@@ -95,6 +106,8 @@ public sealed class AccessFlowService
     public async Task<AccessFlowResult> ProcessAuthorizedPassageAsync(
         AccessDecision decision,
         string source,
+        AccessDirection direction = AccessDirection.Entry,
+        Func<CancellationToken, Task>? onTurnstileReleased = null,
         CancellationToken ct = default)
     {
         if (decision.MemberId is not { } memberId)
@@ -107,19 +120,24 @@ public sealed class AccessFlowService
         }
 
         if (!decision.AllowAutomaticRelease)
-            return await ProcessDeniedOnlyAsync(decision, ct).ConfigureAwait(false);
+            return await ProcessDeniedOnlyAsync(decision, direction, ct).ConfigureAwait(false);
+
+        var member = await _members.GetByIdAsync(memberId, ct).ConfigureAwait(false);
+        var bypassPresence = member?.BypassPresence == true;
 
         var (allowed, blockReason) = await _presence
-            .TryBeginRecognitionAsync(memberId, UnitId, ct)
+            .TryBeginRecognitionAsync(memberId, UnitId, direction, bypassPresence, ct)
             .ConfigureAwait(false);
 
         if (!allowed)
         {
+            _log?.Warning(
+                $"Access blocked after face match for {decision.MemberName}: {blockReason ?? "sem motivo"}");
             return new AccessFlowResult
             {
                 Decision = decision,
-                Direction = AccessDirection.Entry,
-                UiMessage = blockReason ?? AccessDecisionEvaluator.PublicReception
+                Direction = direction,
+                UiMessage = blockReason ?? "Aguarde um momento e tente novamente."
             };
         }
 
@@ -127,7 +145,7 @@ public sealed class AccessFlowService
         {
             _presence.EntryOnlyMode = EntryOnlyMode;
             var plan = await _presence
-                .PlanPassageAsync(memberId, UnitId, source, DeviceId, null, ct)
+                .PlanPassageAsync(memberId, UnitId, source, DeviceId, null, direction, ct)
                 .ConfigureAwait(false);
 
             if (plan is null)
@@ -136,17 +154,60 @@ public sealed class AccessFlowService
                 return new AccessFlowResult
                 {
                     Decision = decision,
-                    UiMessage = "Estado de presença indefinido — procure a recepção."
+                    Direction = direction,
+                    UiMessage = direction == AccessDirection.Exit
+                        ? "Saída não permitida — procure a recepção."
+                        : "Estado de presença indefinido — procure a recepção."
                 };
             }
 
-            await _turnstile
-                .ReleaseEntryAsync(top: decision.MemberName, cancellationToken: ct)
-                .ConfigureAwait(false);
+            var releaseDirection = DualGateMode ? direction : plan.Direction;
 
-            var passage = await _turnstile
-                .WaitForPassageAsync(PassageTimeout, ct)
-                .ConfigureAwait(false);
+            PassageOutcome passage;
+            try
+            {
+                // Escuta passa a armar ANTES do Release — catraca livre pode notificar
+                // PassageDetected imediatamente e o Wait antigo perdia o evento.
+                passage = await _turnstile
+                    .ReleaseAndWaitForPassageAsync(
+                        async releaseCt =>
+                        {
+                            if (releaseDirection == AccessDirection.Exit)
+                            {
+                                await _turnstile
+                                    .ReleaseExitAsync(top: decision.MemberName, cancellationToken: releaseCt)
+                                    .ConfigureAwait(false);
+                            }
+                            else
+                            {
+                                await _turnstile
+                                    .ReleaseEntryAsync(top: decision.MemberName, cancellationToken: releaseCt)
+                                    .ConfigureAwait(false);
+                            }
+
+                            if (onTurnstileReleased is not null)
+                                await onTurnstileReleased(releaseCt).ConfigureAwait(false);
+                        },
+                        PassageTimeout,
+                        ct)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Roll back pending so the next attempt is not stuck.
+                _log?.Warning($"Turnstile release failed: {ex.Message}");
+                await _presence
+                    .ConfirmPassageAsync(plan.AttemptId, passageConfirmed: false, source, DeviceId, ct)
+                    .ConfigureAwait(false);
+                _presence.ReleaseTurnstileGateIfNotStarted();
+                return new AccessFlowResult
+                {
+                    Decision = decision,
+                    Direction = releaseDirection,
+                    AttemptId = plan.AttemptId,
+                    UiMessage = "Catraca indisponível — verifique a conexão."
+                };
+            }
 
             var passageConfirmed = passage == PassageOutcome.PassageDetected;
             var (visitId, accessEvent) = await _presence
@@ -168,17 +229,17 @@ public sealed class AccessFlowService
                 await UpdateLocalToleranceUsedAsync(memberId, ct).ConfigureAwait(false);
 
             var ui = passageConfirmed
-                ? (string.IsNullOrWhiteSpace(decision.PublicMessage)
-                    ? "Entrada registrada"
-                    : decision.PublicMessage)
-                : "Entrada liberada sem passagem";
+                ? BuildPassageSuccessMessage(decision, releaseDirection)
+                : releaseDirection == AccessDirection.Exit
+                    ? "Saída liberada sem passagem.\nAproxime-se novamente."
+                    : "Não detectamos passagem na catraca.\nAproxime-se novamente.";
 
             return new AccessFlowResult
             {
                 Decision = decision,
                 Event = accessEvent,
                 Passage = passage,
-                Direction = AccessDirection.Entry,
+                Direction = releaseDirection,
                 AttemptId = plan.AttemptId,
                 VisitId = visitId,
                 UiMessage = ui
@@ -195,6 +256,7 @@ public sealed class AccessFlowService
         Guid? memberId,
         string? memberName,
         string reason,
+        AccessDirection direction = AccessDirection.Entry,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(reason))
@@ -214,7 +276,7 @@ public sealed class AccessFlowService
         decision.MemberId = memberId;
         decision.MemberName = memberName ?? member?.Name;
 
-        return await ProcessAuthorizedPassageAsync(decision, SourceManual, ct).ConfigureAwait(false);
+        return await ProcessAuthorizedPassageAsync(decision, SourceManual, direction, ct: ct).ConfigureAwait(false);
     }
 
     public Task<AccessFlowResult> ProcessManualExitAsync(
@@ -238,7 +300,15 @@ public sealed class AccessFlowService
             });
         }
 
-        return ProcessManualReleaseAsync(memberId, memberName, "exit", ct);
+        return ProcessManualReleaseAsync(memberId, memberName, "exit", AccessDirection.Exit, ct);
+    }
+
+    private static string BuildPassageSuccessMessage(AccessDecision decision, AccessDirection direction)
+    {
+        if (!string.IsNullOrWhiteSpace(decision.PublicMessage))
+            return decision.PublicMessage;
+
+        return direction == AccessDirection.Exit ? "Saída registrada" : "Entrada registrada";
     }
 
     private async Task TryConsumeToleranceAsync(Guid memberId, Guid? eventId, CancellationToken ct)
@@ -286,7 +356,7 @@ public sealed class AccessFlowService
     {
         var decision = await _recognition.IdentifyAndDecideAsync(image, ct).ConfigureAwait(false);
         if (!decision.Allowed)
-            return await ProcessDeniedOnlyAsync(decision, ct).ConfigureAwait(false);
-        return await ProcessAuthorizedPassageAsync(decision, source, ct).ConfigureAwait(false);
+            return await ProcessDeniedOnlyAsync(decision, ct: ct).ConfigureAwait(false);
+        return await ProcessAuthorizedPassageAsync(decision, source, ct: ct).ConfigureAwait(false);
     }
 }

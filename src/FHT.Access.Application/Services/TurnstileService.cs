@@ -38,7 +38,13 @@ public sealed class TurnstileService : IAsyncDisposable
     {
         var tcs = new TaskCompletionSource<PassageOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        void Handler(object? sender, PassageOutcome outcome) => tcs.TrySetResult(outcome);
+        // Só PassageDetected encerra cedo. Timeout/Unknown da placa (comum em acesso livre)
+        // não abortam a espera — senão a app desiste antes do aluno girar a catraca.
+        void Handler(object? sender, PassageOutcome outcome)
+        {
+            if (outcome == PassageOutcome.PassageDetected)
+                tcs.TrySetResult(outcome);
+        }
 
         PassageReceived += Handler;
         try
@@ -49,6 +55,43 @@ public sealed class TurnstileService : IAsyncDisposable
             await using var reg = timeoutCts.Token.Register(
                 () => tcs.TrySetResult(PassageOutcome.Timeout));
 
+            return await tcs.Task.ConfigureAwait(false);
+        }
+        finally
+        {
+            PassageReceived -= Handler;
+        }
+    }
+
+    /// <summary>
+    /// Arme a escuta de passagem <b>antes</b> do Release — evita perder PassageDetected
+    /// quando a catraca (esp. em acesso livre) responde muito rápido.
+    /// </summary>
+    public async Task<PassageOutcome> ReleaseAndWaitForPassageAsync(
+        Func<CancellationToken, Task> releaseAsync,
+        TimeSpan timeout,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(releaseAsync);
+
+        var tcs = new TaskCompletionSource<PassageOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void Handler(object? sender, PassageOutcome outcome)
+        {
+            if (outcome == PassageOutcome.PassageDetected)
+                tcs.TrySetResult(outcome);
+        }
+
+        PassageReceived += Handler;
+        try
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(timeout);
+
+            await using var reg = timeoutCts.Token.Register(
+                () => tcs.TrySetResult(PassageOutcome.Timeout));
+
+            await releaseAsync(cancellationToken).ConfigureAwait(false);
             return await tcs.Task.ConfigureAwait(false);
         }
         finally

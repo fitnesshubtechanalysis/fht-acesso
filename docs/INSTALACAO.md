@@ -70,10 +70,14 @@ dotnet publish src\FHT.Access.App\FHT.Access.App.csproj `
 
 ### Iniciar com o Windows
 
-- Admin → **Iniciar com Windows** (grava em `HKCU\...\Run`), **ou**
+- Admin → **Geral** → marcar **Iniciar com o Windows** → **Salvar** (grava em `HKCU\...\Run`), **ou**
 - Atalho na pasta **Inicial do Windows** apontando para `C:\FHT\Access\FHT.Access.App.exe`
 
-O app aguarda **5–10 s** após o boot para a NIC Ethernet estar pronta antes de conectar a catraca.
+Em instalação nova, o default já vem com `startWithWindows: true`.
+
+O app aguarda **5–10 s** após o boot (`startupDelaySec`) para a NIC Ethernet estar pronta antes de conectar a catraca.
+
+**Serial / IP da catraca** ficam em `%ProgramData%\FHT\Access\appsettings.json` — ao conectar pela aba Catraca, o discovery grava e persiste automaticamente.
 
 **Instância única:** abrir o `.exe` de novo traz a janela existente à frente (mutex `Global\FHT.Access.SingleInstance`).
 
@@ -97,8 +101,14 @@ Exemplo para piloto:
   "turnstileNetwork": "Ethernet 2",
   "turnstileIp": "192.168.0.100",
   "turnstileSerial": "",
-  "webcamIndex": 0,
+  "webcamIndex": 1,
+  "webcamIndexExit": 2,
+  "exitMode": "facial",
   "faceMatchThreshold": 0.35,
+  "passageSuccessDisplaySec": 5,
+  "passageReleaseMinDisplaySec": 3,
+  "exitProcessFps": 12,
+  "exitProcessMaxWidth": 1920,
   "adminPin": "1234",
   "attendantIdleMinutes": 5,
   "kioskPortrait": true
@@ -114,8 +124,14 @@ Exemplo para piloto:
 | `turnstileNetwork` | Nome da NIC Windows ligada à catraca (ex. `Ethernet 2`). O Connect **precisa** do nome; IP do PC também resolve, mas prefira o nome. |
 | `turnstileIp` | IP da placa Toletus LiteNet3 (ex. `192.168.0.100`) — filtro na discovery |
 | `turnstileSerial` | Opcional; preenchido após Connect (discovery UDP). |
-| `webcamIndex` | `0` = primeira câmera USB; mude se abrir câmera errada |
+| `webcamIndex` | Câmera **entrada** (`0` = integrada do notebook; `1`/`2` = USB) |
+| `webcamIndexExit` | Câmera **saída** (`-1` = desligada; use índice diferente da entrada) |
+| `exitMode` | `facial` = saída com reconhecimento; `free` = saída livre (só entrada facial) |
+| `freeGateMode` | `true` = catraca livre **com** facial: registra entrada/saída **sem** validar presença (reentrada / saída sem entrada). Plano inválido e facial desconhecida seguem iguais. **Passagem física na catraca continua obrigatória** para presença. `false` = trava de presença |
 | `faceMatchThreshold` | `0.35` recomendado. Valores altos (>0.7) migram sozinhos para 0.35 |
+| `passageSuccessDisplaySec` | Segundos na tela para “Entrada/Saída registrada” (padrão `5`) |
+| `passageReleaseMinDisplaySec` | Mínimo em “Pode passar na catraca/saída” (padrão `3`) |
+| `exitProcessFps` / `exitProcessMaxWidth` | Mais frames e resolução na saída (~1 m, câmera panorâmica) |
 | `adminPin` | PIN do modo atendente (`Ctrl+Shift+A`) — **troque antes do piloto** |
 
 ---
@@ -159,7 +175,7 @@ O **sync automático** roda a cada **2 minutos** (alunos + envio de eventos pend
 
 Cadastro facial também **sobe a foto do aluno** para o Gestão (`Customer.photoUrl`). Offline: fica na fila `pending-photos` até o próximo sync.
 
-Entrada e saída usam **toggle de presença**: se o aluno já entrou sem sair, o próximo reconhecimento libera **saída** e registra permanência no Gestão.
+Entrada e saída com **duas câmeras** no mesmo PC: configure `webcamIndex`, `webcamIndexExit` e `exitMode: "facial"`. A saída só libera quem está registrado como **dentro** (entrou antes).
 
 ---
 
@@ -185,6 +201,8 @@ O fluxo facial usa o mesmo caminho após reconhecimento + matrícula vigente.
 3. Após captura, o totem volta ao modo automático em ~2 s
 4. Aluno aproxima-se → deve reconhecer
 
+**Remover facial errada** (ex.: teste no aluno errado): Admin → aba **Face** → selecionar aluno → **Remover facial**.
+
 **Regra:** um rosto = um aluno. Não cadastre o mesmo rosto em dois alunos de teste.
 
 ---
@@ -193,9 +211,16 @@ O fluxo facial usa o mesmo caminho após reconhecimento + matrícula vigente.
 
 | Situação | Totem |
 |----------|-------|
-| Plano vigente + facial OK | Libera + “Entrada registrada…” |
-| Sem matrícula / inativo | “Não foi possível liberar. Procure a recepção.” |
-| Rosto não cadastrado | “Não reconhecemos você” + botões (tentar, cadastrar, chamar atendente) |
+| Plano vigente + facial OK | “Pode passar…” (≥3 s) → “Entrada/Saída registrada” (5 s) |
+| Pessoa longe / de passagem no fundo | Ignorado (ROI central + rosto mínimo) — aproximar da câmera |
+| Rosto **sem** cadastro | “Não foi possível identificar…” (não libera como outro aluno) |
+| Professor / colaborador | Entrada e saída livres — marque no Gestão ou use modalidade `Professor` / `Colaborador` |
+| Liberou mas não passou | “Não detectamos passagem…” → reconhece de novo em ~1,5 s |
+| Sem matrícula / inativo | “Procure a recepção.” |
+| Rosto não cadastrado | “Não foi possível identificar seu rosto.” |
+| Saída sem ter entrado (`freeGateMode: false`) | “Você não está registrado como dentro.” |
+| Reentrada (`freeGateMode: false`) | “Você já está dentro.” |
+| `freeGateMode: true` (piloto) | Sempre registra pela lane (entrada ou saída), sem essas travas |
 | Recepção libera manual | Entrada auditada no Gestão |
 
 A decisão usa `accessAllowed` do Gestão, atualizado antes de cada liberação (`RefreshMemberAsync`).
@@ -206,9 +231,9 @@ A decisão usa `accessAllowed` do Gestão, atualizado antes de cada liberação 
 
 | O quê | Onde |
 |-------|------|
-| Log do dia | `%LOCALAPPDATA%\FHT\Access\logs\access-YYYYMMDD.log` |
-| Boot / crash | `%LOCALAPPDATA%\FHT\Access\boot.log` |
-| Banco local | `%LOCALAPPDATA%\FHT\Access\access.db` |
+| Log do dia | `%ProgramData%\FHT\Access\logs\access-YYYYMMDD.log` |
+| Boot / crash | `%ProgramData%\FHT\Access\boot.log` |
+| Banco local | `%ProgramData%\FHT\Access\access.db` |
 
 Linhas úteis no log:
 
@@ -222,7 +247,7 @@ Linhas úteis no log:
 
 1. No PC de dev: rode `publish-academia.ps1` de novo
 2. **Feche** o FHT Access na academia (bandeja → Sair)
-3. Substitua os arquivos em `C:\FHT\Access\` (mantenha `%LOCALAPPDATA%\FHT\Access\` intacto)
+3. Substitua os arquivos em `C:\FHT\Access\` (mantenha `%ProgramData%\FHT\Access\` intacto)
 4. Abra de novo
 
 Não apague `access.db` na atualização — só se quiser recomeçar do zero.
