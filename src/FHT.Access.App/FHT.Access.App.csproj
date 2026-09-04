@@ -48,9 +48,9 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <!-- Versão semântica — incrementar a cada release. -->
-    <Version>1.0.0</Version>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
+    <Version>1.0.8</Version>
+    <AssemblyVersion>1.0.8.0</AssemblyVersion>
+    <FileVersion>1.0.8.0</FileVersion>
     <Product>FHT Acesso</Product>
     <Company>FitnessHub Tech</Company>
     <!-- Program.cs fornece o Main explícito exigido pelo Velopack. -->

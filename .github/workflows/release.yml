@@ -46,13 +46,19 @@ jobs:
       - name: Pack with Velopack
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force publish/velopack | Out-Null
+          Set-Content -Path publish/velopack/RELEASE_NOTES.md -Value "FHT Acesso v${{ steps.ver.outputs.VERSION }}" -Encoding UTF8
           vpk pack `
             --packId "FHT.Acesso" `
+            --packTitle "FHT Acesso" `
             --packVersion ${{ steps.ver.outputs.VERSION }} `
             --packDir publish/win-x64 `
             --mainExe "FHT.Access.App.exe" `
             --outputDir publish/velopack `
-            --releaseNotes "FHT Acesso v${{ steps.ver.outputs.VERSION }}"
+            --releaseNotes publish/velopack/RELEASE_NOTES.md `
+            --icon src/FHT.Access.App/Assets/app.ico `
+            --splashImage src/FHT.Access.App/Assets/installer-splash.png `
+            --splashProgressColor "None"
 
       - name: Create GitHub Release and upload assets
         uses: softprops/action-gh-release@v2

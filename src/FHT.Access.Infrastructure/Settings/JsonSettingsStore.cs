@@ -1,3 +1,5 @@
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FHT.Access.Domain.Abstractions;
@@ -214,6 +216,7 @@ public sealed class JsonSettingsStore : ISettingsStore
 
         var dir = Path.GetDirectoryName(_filePath)!;
         Directory.CreateDirectory(dir);
+        EnsureUsersCanModify(dir);
 
         if (File.Exists(_filePath))
         {
@@ -223,6 +226,47 @@ public sealed class JsonSettingsStore : ISettingsStore
         var tmp = _filePath + ".tmp";
         File.WriteAllText(tmp, JsonSerializer.Serialize(settings, JsonOptions));
         File.Move(tmp, _filePath, overwrite: true);
+        EnsureUsersCanModify(_filePath);
+    }
+
+    /// <summary>
+    /// ProgramData herda ACL so-leitura para Users. Sem Modify, o Admin nao
+    /// consegue salvar webcam/PIN e o sync grava "Access denied".
+    /// </summary>
+    private static void EnsureUsersCanModify(string path)
+    {
+        try
+        {
+            var users = new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null);
+            if (Directory.Exists(path))
+            {
+                var di = new DirectoryInfo(path);
+                var acl = di.GetAccessControl();
+                acl.AddAccessRule(new FileSystemAccessRule(
+                    users,
+                    FileSystemRights.Modify,
+                    InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                    PropagationFlags.None,
+                    AccessControlType.Allow));
+                di.SetAccessControl(acl);
+                return;
+            }
+
+            if (File.Exists(path))
+            {
+                var fi = new FileInfo(path);
+                var acl = fi.GetAccessControl();
+                acl.AddAccessRule(new FileSystemAccessRule(
+                    users,
+                    FileSystemRights.Modify,
+                    AccessControlType.Allow));
+                fi.SetAccessControl(acl);
+            }
+        }
+        catch
+        {
+            // best-effort — sem elevacao pode falhar
+        }
     }
 
     private AppSettings CreateDefaults()
@@ -251,17 +295,15 @@ public sealed class JsonSettingsStore : ISettingsStore
     }
 
     /// <summary>
-    /// Two USB/indexes configured → default to facial exit (not free pass).
+    /// Two USB/indexes configured → default blank exitMode to facial.
+    /// Explicit <c>free</c> is respected (entry facial only; exit camera not used for recognition).
     /// </summary>
     private static void ApplyDualCameraDefaults(AppSettings settings)
     {
         if (settings.WebcamIndexExit < 0 || settings.WebcamIndexExit == settings.WebcamIndex)
             return;
 
-        if (string.IsNullOrWhiteSpace(settings.ExitMode)
-            || string.Equals(settings.ExitMode, "free", StringComparison.OrdinalIgnoreCase))
-        {
+        if (string.IsNullOrWhiteSpace(settings.ExitMode))
             settings.ExitMode = "facial";
-        }
     }
 }

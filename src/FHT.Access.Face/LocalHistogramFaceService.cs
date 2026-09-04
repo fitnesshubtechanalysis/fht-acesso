@@ -29,8 +29,8 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
     private const int CellBins = 16;
     private const int SpatialLen = Grid * Grid * CellBins;
     private const int SfaceLen = 128;
-    private const float SfaceDefaultThreshold = 0.48f;
-    private const float SpatialDefaultThreshold = 0.55f;
+    private const float SfaceDefaultThreshold = 0.42f;
+    private const float SpatialDefaultThreshold = 0.50f;
     /// <summary>Exige diferença vs 2º lugar — evita liberar desconhecido como cadastro recente.</summary>
     private const float MinScoreMargin = 0.08f;
     private const int DetectMaxWidth = 640;
@@ -69,9 +69,68 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
 
     public string ModelVersion => _useSface ? SfaceModelVersion : SpatialModelVersion;
 
+    private DateTime _presenceCacheUtc;
+    private bool _presenceCacheValue;
+    private int _presenceCacheLen;
+
     public static bool CanHydrate(string? modelVersion)
         => !string.IsNullOrWhiteSpace(modelVersion)
            && CompatibleModelVersions.Contains(modelVersion, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Rápido: há rosto na zona da catraca para abrir o totem?
+    /// (não faz match — só Haar). Positivos são cacheados ~300 ms;
+    /// negativos não, para não travar quando a pessoa acaba de chegar.
+    /// </summary>
+    public bool HasNearbyFace(byte[]? jpeg, FaceDetectionOptions? detection = null)
+    {
+        if (jpeg is null || jpeg.Length < 100)
+            return false;
+
+        var now = DateTime.UtcNow;
+        if (_presenceCacheValue
+            && jpeg.Length == _presenceCacheLen
+            && now - _presenceCacheUtc < TimeSpan.FromMilliseconds(300))
+            return true;
+
+        EnsureEngine();
+        var detect = detection ?? FaceDetectionOptions.ApproachPresence;
+        var found = false;
+        try
+        {
+            if (!OpenCvAvailable || _frontal is null || _frontal.Empty())
+            {
+                // Sem Haar: não bloqueia o totem — deixa o movimento decidir.
+                return true;
+            }
+
+            using var src = Cv2.ImDecode(jpeg, ImreadModes.Color);
+            if (src.Empty())
+                return false;
+
+            using var work = Downscale(src, detect.DetectMaxWidth);
+            using var enhanced = EnhanceLighting(work);
+            found = DetectLargestFace(enhanced, detect) is not null
+                    || DetectLargestFaceLoose(enhanced, detect) is not null;
+        }
+        catch
+        {
+            found = false;
+        }
+
+        if (found)
+        {
+            _presenceCacheLen = jpeg.Length;
+            _presenceCacheUtc = now;
+            _presenceCacheValue = true;
+        }
+        else
+        {
+            _presenceCacheValue = false;
+        }
+
+        return found;
+    }
 
     public async Task EnrollAsync(Guid memberId, byte[] imageBgrOrJpeg, CancellationToken ct = default)
     {
@@ -79,9 +138,17 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         ct.ThrowIfCancellationRequested();
         EnsureEngine();
 
-        var stored = BuildStoredFace(imageBgrOrJpeg, enroll: true);
+        var enrollDetect = FaceDetectionOptions.Enrollment;
+
+        // Um único build com regras de cadastro (Haar permissivo + fallback central).
+        var stored = BuildStoredFace(imageBgrOrJpeg, enroll: true, enrollDetect);
         if (stored.Sface.Count == 0 && stored.Spatial.Count == 0)
             throw new InvalidOperationException("Nenhum rosto detectado. Olhe para a câmera e tente de novo.");
+
+        var conflict = FindBestMatch(stored, excludeMemberId: memberId);
+        if (conflict is not null)
+            throw new FaceEnrollmentConflictException(conflict.MemberId, conflict.Score);
+
         var blob = SerializeStored(stored);
 
         lock (_sync)
@@ -106,6 +173,16 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         if (probe.Sface.Count == 0 && probe.Spatial.Count == 0 && probe.Hists256.Count == 0)
             return Task.FromResult<FaceMatchResult?>(null);
 
+        var match = FindBestMatch(probe, excludeMemberId: null);
+        return Task.FromResult(match);
+    }
+
+    /// <summary>
+    /// Melhor match acima do cutoff + margem. <paramref name="excludeMemberId"/> ignora
+    /// o próprio aluno (re-cadastro) ou null no identify normal.
+    /// </summary>
+    private FaceMatchResult? FindBestMatch(StoredFace probe, Guid? excludeMemberId)
+    {
         Guid? bestId = null;
         var bestScore = 0.0;
         var secondBest = 0.0;
@@ -115,6 +192,9 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         {
             foreach (var (memberId, template) in _templates)
             {
+                if (excludeMemberId is { } ex && memberId == ex)
+                    continue;
+
                 var score = Score(probe, template, out var usedSface);
                 if (score > bestScore)
                 {
@@ -130,7 +210,6 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
             }
         }
 
-        // Settings > 0.7 are legacy UI values — use engine defaults. Otherwise use configured floor.
         var configured = _threshold > 0.7
             ? (bestSface ? SfaceDefaultThreshold : SpatialDefaultThreshold)
             : _threshold;
@@ -139,13 +218,12 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
             bestSface ? SfaceDefaultThreshold : SpatialDefaultThreshold);
 
         if (bestId is null || bestScore < cutoff)
-            return Task.FromResult<FaceMatchResult?>(null);
+            return null;
 
-        // Empate / ambiguidade: desconhecido costuma ficar perto de vários templates fracos.
         if (bestScore - secondBest < MinScoreMargin)
-            return Task.FromResult<FaceMatchResult?>(null);
+            return null;
 
-        return Task.FromResult<FaceMatchResult?>(new FaceMatchResult(bestId.Value, bestScore));
+        return new FaceMatchResult(bestId.Value, bestScore);
     }
 
     public Task RemoveAsync(Guid memberId, CancellationToken ct = default)
@@ -220,6 +298,11 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
             {
                 return BuildWithOpenCv(imageBgrOrJpeg, enroll, detection);
             }
+            catch (InvalidOperationException) when (enroll)
+            {
+                // "Nenhum rosto detectado" e similares — não mascarar com histograma do frame.
+                throw;
+            }
             catch
             {
                 // Fall through.
@@ -253,7 +336,8 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
             {
                 using var work = Downscale(variant, detect.DetectMaxWidth);
                 using var enhanced = EnhanceLighting(work);
-                var face = DetectLargestFace(enhanced, detect);
+                var face = DetectLargestFace(enhanced, detect)
+                           ?? DetectLargestFaceLoose(enhanced, detect);
                 Mat region;
                 if (face is { } rect)
                 {
@@ -410,6 +494,39 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
             .ToList();
 
         return candidates.Count > 0 ? candidates[0] : null;
+    }
+
+    /// <summary>
+    /// Segunda passagem no cadastro: mesma Haar, sem filtro de centro/área mínima.
+    /// </summary>
+    private Rect? DetectLargestFaceLoose(Mat bgr, FaceDetectionOptions detect)
+    {
+        using var gray = new Mat();
+        Cv2.CvtColor(bgr, gray, ColorConversionCodes.BGR2GRAY);
+        Cv2.EqualizeHist(gray, gray);
+
+        var minSize = new Size(
+            Math.Max(16, detect.MinFaceSize / 2),
+            Math.Max(16, detect.MinFaceSize / 2));
+        Rect[] hits = [];
+        if (_frontal is not null)
+            hits = _frontal.DetectMultiScale(
+                gray,
+                Math.Max(1.05, detect.ScaleFactor - 0.02),
+                Math.Max(1, detect.MinNeighbors - 1),
+                HaarDetectionTypes.ScaleImage,
+                minSize);
+        if (hits.Length == 0 && _profile is not null)
+            hits = _profile.DetectMultiScale(
+                gray,
+                Math.Max(1.05, detect.ScaleFactor - 0.02),
+                Math.Max(1, detect.MinNeighbors - 1),
+                HaarDetectionTypes.ScaleImage,
+                minSize);
+        if (hits.Length == 0)
+            return null;
+
+        return hits.OrderByDescending(r => r.Width * r.Height).First();
     }
 
     private static Mat PaddedSquare(Mat bgr, Rect face)

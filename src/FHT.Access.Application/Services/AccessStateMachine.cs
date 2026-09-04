@@ -20,10 +20,32 @@ public sealed class AccessStateMachine
     public event EventHandler<AccessUiState>? StateChanged;
     public event EventHandler? ActiveLaneChanged;
 
+    /// <summary>
+    /// Outra lane não pode roubar a UI enquanto esta está em reconhecimento/resultado.
+    /// Evita saída apagar o nome da entrada (e vice-versa).
+    /// </summary>
+    public bool CanLaneTakeUi(AccessDirection lane)
+    {
+        lock (_sync)
+        {
+            if (ActiveLane is null || ActiveLane == lane)
+                return true;
+
+            return _state is AccessUiState.AutomaticIdle;
+        }
+    }
+
     public void SetActiveLane(AccessDirection lane)
     {
         lock (_sync)
         {
+            if (ActiveLane is { } owner
+                && owner != lane
+                && _state is not AccessUiState.AutomaticIdle)
+            {
+                return;
+            }
+
             if (ActiveLane == lane)
                 return;
             ActiveLane = lane;
@@ -49,10 +71,22 @@ public sealed class AccessStateMachine
         StateChanged?.Invoke(this, next);
     }
 
-    public void ResetAutomaticIdle()
+    /// <summary>
+    /// Só a lane ativa (ou idle) pode voltar para AutomaticIdle — evita a lane ociosa
+    /// limpar a tela enquanto a outra ainda mostra resultado.
+    /// </summary>
+    public void ResetAutomaticIdle(AccessDirection? forLane = null)
     {
         lock (_sync)
         {
+            if (forLane is { } lane
+                && ActiveLane is { } owner
+                && owner != lane
+                && _state is not AccessUiState.AutomaticIdle)
+            {
+                return;
+            }
+
             ActiveLane = null;
         }
 

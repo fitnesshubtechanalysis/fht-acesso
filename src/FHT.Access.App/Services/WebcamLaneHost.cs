@@ -58,26 +58,27 @@ public sealed class WebcamLaneHost : IDisposable
         var exitProcessFps = settings.ExitProcessFps > 0 ? settings.ExitProcessFps : 12;
         Exit.Configure(exitW, exitH, exitPreviewFps, exitProcessFps);
         Exit.MaxProcessWidth = settings.ExitProcessMaxWidth > 0 ? settings.ExitProcessMaxWidth : 1920;
-        // Saída: menos sensível que o antigo 0.004 (disparava com qualquer movimento longe).
-        Exit.MotionRatioThreshold = 0.024;
-        Exit.MotionPixelThreshold = 26;
-        Exit.MotionHold = TimeSpan.FromSeconds(2.0);
+        // Entrada: ROI central (ignora corredor lateral), mas sensível o bastante
+        // para quem para na catraca.
+        Entry.MotionRatioThreshold = 0.032;
+        Entry.MotionPixelThreshold = 28;
+        Entry.MotionHold = TimeSpan.FromMilliseconds(900);
+        Entry.MotionRoiWidthFraction = 0.42;
+        Entry.MotionRoiHeightFraction = 0.52;
+        Entry.MotionRoiCenterY = 0.44;
+
+        Exit.MotionRatioThreshold = 0.036;
+        Exit.MotionPixelThreshold = 28;
+        Exit.MotionHold = TimeSpan.FromMilliseconds(900);
         Exit.MotionRoiWidthFraction = 0.38;
         Exit.MotionRoiHeightFraction = 0.48;
         Exit.MotionRoiCenterY = 0.40;
 
-        Entry.MotionRatioThreshold = 0.028;
-        Entry.MotionPixelThreshold = 28;
-        Entry.MotionHold = TimeSpan.FromSeconds(1.6);
-        Entry.MotionRoiWidthFraction = 0.50;
-        Entry.MotionRoiHeightFraction = 0.58;
-        Entry.MotionRoiCenterY = 0.45;
-
 
 
         DualGateEnabled = settings.WebcamIndexExit >= 0
-
-                          && settings.WebcamIndexExit != settings.WebcamIndex;
+                          && settings.WebcamIndexExit != settings.WebcamIndex
+                          && string.Equals(settings.ExitMode, "facial", StringComparison.OrdinalIgnoreCase);
 
     }
 

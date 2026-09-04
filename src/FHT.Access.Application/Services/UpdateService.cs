@@ -23,7 +23,7 @@ public sealed class UpdateServiceOptions
 /// Verifica se há nova versão na Gestão, baixa e aplica via <see cref="IAppUpdater"/>.
 /// Emite progresso através de <see cref="StateChanged"/> para a UI.
 /// </summary>
-public sealed class UpdateService : IAsyncDisposable
+public sealed class UpdateService : IAsyncDisposable, IDisposable
 {
     private readonly IGestaoAccessClient _gestao;
     private readonly IAppUpdater _updater;
@@ -85,6 +85,12 @@ public sealed class UpdateService : IAsyncDisposable
             catch (OperationCanceledException) { }
         }
         _cts.Dispose();
+    }
+
+    // ServiceProvider.Dispose() exige IDisposable; encapsula o async dispose.
+    public void Dispose()
+    {
+        DisposeAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
     }
 
     // ── Trigger manual (Admin) ───────────────────────────────────────────────

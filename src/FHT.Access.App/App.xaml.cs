@@ -306,6 +306,20 @@ public partial class App : System.Windows.Application
             var lanes = _services!.GetRequiredService<WebcamLaneHost>();
             lanes.Start(settings);
 
+            // Dá tempo do OpenCV entregar o 1º frame antes de ligar o motor.
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (DateTime.UtcNow < deadline
+                   && lanes.Entry.State is not WebcamConnectionState.Connected
+                   and not WebcamConnectionState.Unavailable)
+            {
+                Thread.Sleep(200);
+            }
+
+            _logger?.Information(
+                lanes.Entry.State == WebcamConnectionState.Connected
+                    ? $"Entry camera {settings.WebcamIndex} connected (frames={lanes.Entry.FramesCaptured})."
+                    : $"Entry camera {settings.WebcamIndex} NOT connected — state={lanes.Entry.State}, error={lanes.Entry.LastOpenError ?? "—"}");
+
             if (lanes.DualGateEnabled)
             {
                 var exitOk = lanes.WaitForExitCamera(TimeSpan.FromSeconds(8));
@@ -313,6 +327,11 @@ public partial class App : System.Windows.Application
                     exitOk
                         ? $"Exit camera {settings.WebcamIndexExit} connected (frames={lanes.Exit.FramesCaptured})."
                         : $"Exit camera {settings.WebcamIndexExit} NOT connected — state={lanes.Exit.State}, error={lanes.Exit.LastOpenError ?? "—"}");
+            }
+            else
+            {
+                _logger?.Information(
+                    $"Exit facial desligada (exitMode={settings.ExitMode}, webcamIndexExit={settings.WebcamIndexExit}).");
             }
         }
         catch (Exception ex)
@@ -353,12 +372,12 @@ public partial class App : System.Windows.Application
                 settings.PassageReleaseMinDisplaySec <= 0 ? 3 : settings.PassageReleaseMinDisplaySec);
             gates.BindCameras(
                 () => lanes.Entry.GetJpegFrame(),
-                () => lanes.Entry.HasMotion(),
+                () => IsApproachSignal(lanes.Entry, face, FaceDetectionOptions.ApproachPresence),
                 lanes.DualGateEnabled
                     ? () => lanes.Exit.GetJpegFrame()
                     : null,
                 lanes.DualGateEnabled
-                    ? () => lanes.Exit.HasMotion()
+                    ? () => IsApproachSignal(lanes.Exit, face, FaceDetectionOptions.ApproachPresence)
                     : null);
             gates.ConfigureKioskDisplay(successDisplay, releaseMinDisplay);
             gates.Start();
@@ -374,6 +393,28 @@ public partial class App : System.Windows.Application
             Boot($"engine skip: {ex.Message}");
             _logger?.Error($"Automatic engine failed to start: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Abre o totem só com movimento na ROI + rosto (quando o frame já existe).
+    /// Sem frame ainda, movimento basta para não travar o aquecimento da câmera.
+    /// </summary>
+    private static bool IsApproachSignal(
+        WebcamService cam,
+        LocalHistogramFaceService? face,
+        FaceDetectionOptions presence)
+    {
+        if (!cam.HasMotion())
+            return false;
+
+        var jpeg = cam.GetJpegFrame();
+        if (jpeg is null || jpeg.Length < 100)
+            return true;
+
+        if (face is null)
+            return true;
+
+        return face.HasNearbyFace(jpeg, presence);
     }
 
     private void StartUpdateService()

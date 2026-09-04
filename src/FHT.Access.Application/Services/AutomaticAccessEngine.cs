@@ -149,7 +149,7 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
         _sessions.AllowImmediateRetry();
 
         if (_states.ActiveLane is null || _states.ActiveLane == _laneDirection)
-            _states.ResetAutomaticIdle();
+            _states.ResetAutomaticIdle(_laneDirection);
 
         _resultHold?.TrySetResult();
 
@@ -224,7 +224,7 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
             _sessions.CompleteSession();
 
         else if (_states.ActiveLane is null || _states.ActiveLane == _laneDirection)
-            _states.ResetAutomaticIdle();
+            _states.ResetAutomaticIdle(_laneDirection);
 
     }
 
@@ -268,7 +268,7 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
                         if (_states.ActiveLane == _laneDirection)
 
-                            _states.ResetAutomaticIdle();
+                            _states.ResetAutomaticIdle(_laneDirection);
 
                     }
 
@@ -293,7 +293,7 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
                     if (_states.ActiveLane == _laneDirection && _states.State != AccessUiState.AutomaticIdle)
 
-                        _states.ResetAutomaticIdle();
+                        _states.ResetAutomaticIdle(_laneDirection);
 
                     await Task.Delay(150, ct).ConfigureAwait(false);
 
@@ -318,6 +318,12 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
                 }
 
 
+
+                if (!_states.CanLaneTakeUi(_laneDirection))
+                {
+                    await Task.Delay(100, ct).ConfigureAwait(false);
+                    continue;
+                }
 
                 if (!_sessions.TryBeginSession())
 
@@ -471,7 +477,7 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
                         _sessions.CompleteSession();
 
-                        _states.ResetAutomaticIdle();
+                        _states.ResetAutomaticIdle(_laneDirection);
 
                     }
 
@@ -505,7 +511,7 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
                     if (_states.ActiveLane == _laneDirection)
 
-                        _states.ResetAutomaticIdle();
+                        _states.ResetAutomaticIdle(_laneDirection);
 
                     continue;
 
@@ -578,7 +584,7 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
                 }
 
                 if (_states.ActiveLane == _laneDirection)
-                    _states.ResetAutomaticIdle();
+                    _states.ResetAutomaticIdle(_laneDirection);
             }
 
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -603,7 +609,7 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
                     if (_states.ActiveLane == _laneDirection)
 
-                        _states.ResetAutomaticIdle();
+                        _states.ResetAutomaticIdle(_laneDirection);
 
                 }
 
@@ -650,8 +656,8 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
 
         return _laneDirection == AccessDirection.Exit
-            ? $"Saída registrada.\nAté breve!"
-            : $"Entrada registrada.\nTenha um ótimo treino!";
+            ? $"Olá, {decision.MemberName}!\n\nSaída registrada.\nAté breve!"
+            : $"Olá, {decision.MemberName}!\n\nEntrada registrada.\nTenha um ótimo treino!";
 
     }
 

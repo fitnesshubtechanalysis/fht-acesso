@@ -609,7 +609,7 @@
                         <TextBlock Text="{Binding UpdateDownloadPercent, StringFormat='{}{0}%'}"
                                    FontSize="96" FontWeight="Bold"
                                    Foreground="#00D17E" TextAlignment="Center" HorizontalAlignment="Center" />
-                        <ProgressBar Value="{Binding UpdateDownloadPercent}" Maximum="100"
+                        <ProgressBar Value="{Binding UpdateDownloadPercent, Mode=OneWay}" Maximum="100"
                                      Width="480" Height="12" Margin="0,24,0,0"
                                      Foreground="#00D17E" Background="#333333" />
                     </StackPanel>

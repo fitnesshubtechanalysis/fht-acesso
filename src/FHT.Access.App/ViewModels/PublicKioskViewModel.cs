@@ -194,19 +194,19 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
     public int UpdateCountdown
     {
         get => _updateCountdown;
-        private set => SetProperty(ref _updateCountdown, value);
+        set => SetProperty(ref _updateCountdown, value);
     }
 
     public int UpdateDownloadPercent
     {
         get => _updateDownloadPercent;
-        private set => SetProperty(ref _updateDownloadPercent, value);
+        set => SetProperty(ref _updateDownloadPercent, value);
     }
 
     public string UpdateVersionLabel
     {
         get => _updateVersionLabel;
-        private set => SetProperty(ref _updateVersionLabel, value);
+        set => SetProperty(ref _updateVersionLabel, value);
     }
 
     private void OnUpdateStateChanged(object? sender, EventArgs e)

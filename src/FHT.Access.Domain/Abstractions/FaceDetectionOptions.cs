@@ -1,6 +1,6 @@
 namespace FHT.Access.Domain.Abstractions;
 
-/// <summary>Haar / downscale tuning for identify (enroll always uses defaults).</summary>
+/// <summary>Haar / downscale tuning for identify and enroll.</summary>
 public sealed record FaceDetectionOptions(
     int DetectMaxWidth = 640,
     int MinFaceSize = 48,
@@ -14,6 +14,43 @@ public sealed record FaceDetectionOptions(
     double CenterYMargin = 0.14)
 {
     public static FaceDetectionOptions Default { get; } = new();
+
+    /// <summary>
+    /// Gatilho de aproximação: rosto na zona da catraca (mais leve que identify).
+    /// </summary>
+    public static FaceDetectionOptions ApproachPresence { get; } = new(
+        DetectMaxWidth: 800,
+        MinFaceSize: 32,
+        ScaleFactor: 1.07,
+        MinNeighbors: 2,
+        MinFaceAreaFraction: 0.022,
+        CenterXMargin: 0.14,
+        CenterYMargin: 0.12);
+
+    /// <summary>
+    /// Entrada no totem: um pouco mais permissivo que Default (distância de catraca),
+    /// sem inventar crop wide — só Haar.
+    /// </summary>
+    public static FaceDetectionOptions EntryIdentify { get; } = new(
+        DetectMaxWidth: 960,
+        MinFaceSize: 40,
+        ScaleFactor: 1.07,
+        MinNeighbors: 3,
+        MinFaceAreaFraction: 0.035,
+        CenterXMargin: 0.16,
+        CenterYMargin: 0.12);
+
+    /// <summary>
+    /// Cadastro no balcão: mais permissivo (rosto próximo, ângulo/iluminação variáveis).
+    /// </summary>
+    public static FaceDetectionOptions Enrollment { get; } = new(
+        DetectMaxWidth: 960,
+        MinFaceSize: 28,
+        ScaleFactor: 1.07,
+        MinNeighbors: 2,
+        MinFaceAreaFraction: 0.012,
+        CenterXMargin: 0.08,
+        CenterYMargin: 0.08);
 
     /// <summary>
     /// Saída: exige rosto bem próximo/central — ignora musculação/esteira ao fundo.

@@ -87,6 +87,7 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
     private bool _lastSyncOk;
     private int _pendingEventsCount;
     private BitmapSource? _enrollPreview;
+    private byte[]? _lastEnrollJpeg;
     private bool _isSettingsVisible;
     private bool _isIdleWarningVisible;
     private bool _isBusy;
@@ -781,64 +782,102 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        var jpeg = _webcam.GetJpegFrame();
-        if (jpeg is null || jpeg.Length < 100)
-        {
-            EnrollStatus = "Sem imagem da câmera. Verifique o dispositivo.";
-            return;
-        }
-
-        var captureBytes = (byte[])jpeg.Clone();
         try
         {
             IsBusy = true;
             EnrollStatus = "Processando captura…";
 
-            await Task.Run(async () =>
-                await _recognition.EnrollAsync(memberId, captureBytes).ConfigureAwait(false))
-                .ConfigureAwait(true);
-
-            if (!string.IsNullOrWhiteSpace(_settings.UnitId))
+            // Até 3 tentativas: o frame do preview às vezes é o momento em que
+            // o Haar ainda não “encaixa” (piscar / ângulo / foco).
+            Exception? lastError = null;
+            for (var attempt = 0; attempt < 3; attempt++)
             {
-                var unitId = _settings.UnitId.Trim();
-                _ = Task.Run(async () =>
+                var jpeg = _lastEnrollJpeg ?? _webcam.GetJpegFrame();
+                if (jpeg is null || jpeg.Length < 100)
                 {
-                    try
+                    lastError = new InvalidOperationException(
+                        "Sem imagem da câmera. Aguarde o preview e tente de novo.");
+                    await Task.Delay(180).ConfigureAwait(true);
+                    continue;
+                }
+
+                var captureBytes = (byte[])jpeg.Clone();
+                try
+                {
+                    await Task.Run(async () =>
+                            await _recognition.EnrollAsync(memberId, captureBytes).ConfigureAwait(false))
+                        .ConfigureAwait(true);
+
+                    if (!string.IsNullOrWhiteSpace(_settings.UnitId))
                     {
-                        await _photoSync
-                            .EnqueueAndTryUploadAsync(unitId, memberId, captureBytes)
-                            .ConfigureAwait(false);
+                        var unitId = _settings.UnitId.Trim();
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await _photoSync
+                                    .EnqueueAndTryUploadAsync(unitId, memberId, captureBytes)
+                                    .ConfigureAwait(false);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.Warning($"Photo upload queued only: {ex.Message}");
+                            }
+                        });
                     }
-                    catch (Exception ex)
+
+                    _ = Task.Run(async () =>
                     {
-                        _logger.Warning($"Photo upload queued only: {ex.Message}");
-                    }
-                });
+                        try { await _memberSync.RefreshMemberAsync(memberId).ConfigureAwait(false); }
+                        catch { /* best effort */ }
+                    });
+
+                    _logger.Information($"Face enrolled for member {memberId}.");
+
+                    StopEnrollmentPreview();
+                    ReleaseCamera();
+
+                    var refreshed = await _members.GetByIdAsync(memberId).ConfigureAwait(true);
+                    var planOk = refreshed is not null && DescribePlan(refreshed).Ok;
+
+                    EnrollStatus = !planOk
+                        ? "Facial cadastrada.\nSem matrícula vigente — a catraca não libera."
+                        : "Facial cadastrada.\nAproxime-se do totem para entrar.";
+                    Screen = AccessUiState.EnrollmentCompleted;
+                    _states.TransitionTo(
+                        AccessUiState.EnrollmentCompleted,
+                        memberDisplayName: SelectedMemberName,
+                        memberId: memberId);
+                    ScheduleReturnToKiosk(TimeSpan.FromSeconds(2));
+                    return;
+                }
+                catch (FaceEnrollmentConflictException)
+                {
+                    throw;
+                }
+                catch (InvalidOperationException ex) when (
+                    ex.Message.Contains("rosto", StringComparison.OrdinalIgnoreCase))
+                {
+                    lastError = ex;
+                    EnrollStatus = attempt < 2
+                        ? "Ajustando captura… mantenha o rosto no centro."
+                        : ex.Message;
+                    await Task.Delay(220).ConfigureAwait(true);
+                }
             }
 
-            _ = Task.Run(async () =>
-            {
-                try { await _memberSync.RefreshMemberAsync(memberId).ConfigureAwait(false); }
-                catch { /* best effort */ }
-            });
-
-            _logger.Information($"Face enrolled for member {memberId}.");
-
-            StopEnrollmentPreview();
-            ReleaseCamera();
-
-            var refreshed = await _members.GetByIdAsync(memberId).ConfigureAwait(true);
-            var planOk = refreshed is not null && DescribePlan(refreshed).Ok;
-
-            EnrollStatus = !planOk
-                ? "Facial cadastrada.\nSem matrícula vigente — a catraca não libera."
-                : "Facial cadastrada.\nAproxime-se do totem para entrar.";
-            Screen = AccessUiState.EnrollmentCompleted;
-            _states.TransitionTo(
-                AccessUiState.EnrollmentCompleted,
-                memberDisplayName: SelectedMemberName,
-                memberId: memberId);
-            ScheduleReturnToKiosk(TimeSpan.FromSeconds(2));
+            EnrollStatus = lastError?.Message
+                ?? "Nenhum rosto detectado. Olhe para a câmera e tente de novo.";
+        }
+        catch (FaceEnrollmentConflictException conflict)
+        {
+            var other = await _members.GetByIdAsync(conflict.ConflictingMemberId).ConfigureAwait(true);
+            var otherName = other?.Name?.Trim();
+            EnrollStatus = string.IsNullOrWhiteSpace(otherName)
+                ? "Este rosto já está cadastrado em outro aluno.\nRemova a facial do outro cadastro antes de continuar."
+                : $"Este rosto já está cadastrado em:\n{otherName}\n\nRemova a facial dele antes de cadastrar aqui.";
+            _logger.Warning(
+                $"Enrollment conflict: target={memberId} already matches {conflict.ConflictingMemberId} score={conflict.Score:F2}.");
         }
         catch (Exception ex)
         {
@@ -1018,6 +1057,7 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
         _previewSubscribed = false;
         _webcam.FrameReady -= OnEnrollFrame;
         EnrollPreview = null;
+        _lastEnrollJpeg = null;
     }
 
     private void ReleaseCamera() => _camera.Release(CameraOwner);
@@ -1025,7 +1065,13 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
     private void OnEnrollFrame(object? sender, WebcamFrameEventArgs e)
     {
         var bitmap = e.Bitmap;
-        _ = _dispatcher.BeginInvoke(() => EnrollPreview = bitmap);
+        var jpeg = e.JpegBytes;
+        _ = _dispatcher.BeginInvoke(() =>
+        {
+            if (jpeg is { Length: >= 100 })
+                _lastEnrollJpeg = jpeg;
+            EnrollPreview = bitmap;
+        });
     }
 
     private static string Capitalize(string value)

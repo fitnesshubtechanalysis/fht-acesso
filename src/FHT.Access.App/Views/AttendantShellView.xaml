@@ -812,7 +812,7 @@
         </Grid>
 
         <!-- ============ CADASTRO FACIAL ============ -->
-        <Grid Grid.RowSpan="3" Panel.ZIndex="3" Background="#0A0A0A">
+        <Grid Grid.RowSpan="3" Panel.ZIndex="5" Background="#0A0A0A">
             <Grid.Style>
                 <Style TargetType="Grid">
                     <Setter Property="Visibility" Value="Collapsed" />
@@ -830,9 +830,10 @@
                         <RowDefinition Height="*" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
-                    <TextBlock Text="D. CADASTRO FACIAL" FontSize="15" FontWeight="Bold" Foreground="White"
+                    <TextBlock Text="CADASTRO FACIAL" FontSize="15" FontWeight="Bold" Foreground="White"
                                Margin="2,0,0,12" />
-                    <Border Grid.Row="1" Background="#141414" BorderBrush="#2A2A2A" BorderThickness="1" CornerRadius="16" Padding="18,16" Margin="0,0,0,12">
+                    <Border Grid.Row="1" Background="#141414" BorderBrush="#2A2A2A" BorderThickness="1"
+                            CornerRadius="16" Padding="18,16" Margin="0,0,0,12" ClipToBounds="True">
                         <StackPanel>
                             <Grid Margin="0,0,0,14">
                                 <Image Source="pack://application:,,,/Assets/logo-fht-acesso.png"
@@ -848,8 +849,8 @@
                                 </StackPanel>
                             </Grid>
 
-                            <!-- Preview 16:9 — mesma proporção/orientação da webcam (sem espelho). -->
-                            <Grid Width="520" Height="292" HorizontalAlignment="Center" Margin="0,0,0,14">
+                            <!-- Preview dentro da largura do card (evita cobrir o botao Capturar). -->
+                            <Grid Width="364" Height="205" HorizontalAlignment="Center" Margin="0,0,0,14">
                                 <Border Background="#0C0C0C" CornerRadius="10" ClipToBounds="True">
                                     <Grid>
                                         <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE714;" FontSize="48" Foreground="#3F3F3F"
@@ -931,13 +932,17 @@
                                     <TextBlock Text="Qualidade ótima" FontSize="13.5" Foreground="#E5E5E5" VerticalAlignment="Center" />
                                 </StackPanel>
                             </StackPanel>
-                            <TextBlock Text="{Binding EnrollStatus}" FontSize="13" Foreground="#E5E5E5"
-                                       Margin="4,8,4,0" TextWrapping="Wrap" TextAlignment="Center" />
+                            <TextBlock Text="{Binding EnrollStatus}" FontSize="14" FontWeight="SemiBold"
+                                       Foreground="#F5A623" Margin="4,10,4,0" TextWrapping="Wrap"
+                                       TextAlignment="Center" MinHeight="20" />
                         </StackPanel>
                     </Border>
 
-                    <StackPanel Grid.Row="2">
-                        <Button Style="{StaticResource DashActionButton}" Command="{Binding CaptureCommand}" Margin="0,0,0,10" Height="52">
+                    <StackPanel Grid.Row="2" Panel.ZIndex="10">
+                        <Button Style="{StaticResource DashActionButton}"
+                                Command="{Binding CaptureCommand}"
+                                Margin="0,0,0,10" Height="52"
+                                ToolTip="Captura o rosto e grava a facial do aluno">
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                 <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE722;" FontSize="16" Foreground="White" VerticalAlignment="Center" Margin="0,0,8,0" />
                                 <TextBlock Text="Capturar" FontSize="15" FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center" />

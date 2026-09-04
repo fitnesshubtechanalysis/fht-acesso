@@ -244,23 +244,65 @@ public sealed class WebcamService : IDisposable
                 throw new InvalidOperationException(LastOpenError);
             }
 
+            // Pedir resolução alta demais (ex. 1080p no notebook) faz Read() falhar
+            // em vários drivers — tenta o pedido e, se o 1º frame vier vazio, reabre no default.
+            ApplyCaptureProperties(_capture, _width, _height, _previewFps);
+            using (var probe = new Mat())
+            {
+                if (!_capture.Read(probe) || probe.Empty())
+                {
+                    _capture.Dispose();
+                    _capture = TryOpenCapture(_cameraIndex);
+                    if (_capture is null || !_capture.IsOpened())
+                    {
+                        _capture?.Dispose();
+                        _capture = null;
+                        LastOpenError =
+                            $"Câmera {_cameraIndex} abriu mas não entrega frame em {_width}x{_height} nem no default.";
+                        throw new InvalidOperationException(LastOpenError);
+                    }
+
+                    // Default do driver (geralmente 640x480 / 1280x720).
+                    ApplyCaptureProperties(_capture, 1280, 720, Math.Min(_previewFps, 30));
+                    using var probe2 = new Mat();
+                    if (!_capture.Read(probe2) || probe2.Empty())
+                    {
+                        LastOpenError = $"Câmera {_cameraIndex} não entrega frames (verifique se outra app está usando).";
+                        _capture.Dispose();
+                        _capture = null;
+                        throw new InvalidOperationException(LastOpenError);
+                    }
+                }
+            }
+
             LastOpenError = null;
-            _capture.Set(VideoCaptureProperties.FrameWidth, _width);
-            _capture.Set(VideoCaptureProperties.FrameHeight, _height);
-            _capture.Set(VideoCaptureProperties.Fps, _previewFps);
-            try { _capture.Set(VideoCaptureProperties.AutoExposure, 0.75); } catch { /* driver-dependent */ }
             CameraIndex = _cameraIndex;
         }
+    }
+
+    private static void ApplyCaptureProperties(VideoCapture capture, int width, int height, int fps)
+    {
+        if (width > 0)
+            capture.Set(VideoCaptureProperties.FrameWidth, width);
+        if (height > 0)
+            capture.Set(VideoCaptureProperties.FrameHeight, height);
+        if (fps > 0)
+            capture.Set(VideoCaptureProperties.Fps, fps);
+        try { capture.Set(VideoCaptureProperties.AutoExposure, 0.75); } catch { /* driver-dependent */ }
     }
 
     private static VideoCapture? TryOpenCapture(int index)
     {
         if (OperatingSystem.IsWindows())
         {
-            var dshow = new VideoCapture(index, VideoCaptureAPIs.DSHOW);
-            if (dshow.IsOpened())
-                return dshow;
-            dshow.Dispose();
+            // MSMF costuma ser mais estável em webcam integrada; DSHOW em USB.
+            foreach (var api in new[] { VideoCaptureAPIs.MSMF, VideoCaptureAPIs.DSHOW })
+            {
+                var cap = new VideoCapture(index, api);
+                if (cap.IsOpened())
+                    return cap;
+                cap.Dispose();
+            }
         }
 
         var fallback = new VideoCapture(index);

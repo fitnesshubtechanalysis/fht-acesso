@@ -126,7 +126,7 @@ Exemplo para piloto:
 | `turnstileSerial` | Opcional; preenchido após Connect (discovery UDP). |
 | `webcamIndex` | Câmera **entrada** (`0` = integrada do notebook; `1`/`2` = USB) |
 | `webcamIndexExit` | Câmera **saída** (`-1` = desligada; use índice diferente da entrada) |
-| `exitMode` | `facial` = saída com reconhecimento; `free` = saída livre (só entrada facial) |
+| `exitMode` | `facial` = saída com reconhecimento (liga a 2ª câmera). `free` = **só entrada facial**; a câmera de saída **não** abre nem reconhece (mesmo com `webcamIndexExit` preenchido). |
 | `freeGateMode` | `true` = catraca livre **com** facial: registra entrada/saída **sem** validar presença (reentrada / saída sem entrada). Plano inválido e facial desconhecida seguem iguais. **Passagem física na catraca continua obrigatória** para presença. `false` = trava de presença |
 | `faceMatchThreshold` | `0.35` recomendado. Valores altos (>0.7) migram sozinhos para 0.35 |
 | `passageSuccessDisplaySec` | Segundos na tela para “Entrada/Saída registrada” (padrão `5`) |
