@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<title>FHT Acesso — Regras Operacionais v1.0.9</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", Calibri, Arial, sans-serif;
+    color: #111;
+    font-size: 11pt;
+    line-height: 1.45;
+    margin: 0;
+  }
+  .cover {
+    border: 2px solid #1a1a1a;
+    padding: 28px 24px;
+    margin-bottom: 22px;
+  }
+  .brand { font-size: 28pt; font-weight: 800; letter-spacing: 1px; margin: 0; }
+  .brand .g { color: #22C55E; }
+  .brand .o { color: #F15A29; }
+  .sub { color: #555; font-size: 10pt; letter-spacing: 2px; margin-top: 4px; }
+  h1 { font-size: 16pt; margin: 18px 0 8px; }
+  h2 { font-size: 12.5pt; margin: 18px 0 6px; border-bottom: 1px solid #ddd; padding-bottom: 3px; }
+  h3 { font-size: 11pt; margin: 12px 0 4px; }
+  p, li { margin: 4px 0; }
+  ul { margin: 4px 0 8px 18px; padding: 0; }
+  .meta { font-size: 10pt; color: #333; margin-top: 14px; }
+  .meta td { padding: 2px 10px 2px 0; vertical-align: top; }
+  .ok { color: #166534; font-weight: 700; }
+  .warn { color: #9a3412; font-weight: 700; }
+  table.grid {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0 14px;
+    font-size: 10pt;
+  }
+  table.grid th, table.grid td {
+    border: 1px solid #ccc;
+    padding: 6px 8px;
+    text-align: left;
+    vertical-align: top;
+  }
+  table.grid th { background: #f3f4f6; }
+  .box {
+    background: #f8fafc;
+    border-left: 4px solid #22C55E;
+    padding: 8px 10px;
+    margin: 10px 0;
+  }
+  .box.orange { border-left-color: #F15A29; }
+  .footer {
+    margin-top: 28px;
+    font-size: 9pt;
+    color: #666;
+    border-top: 1px solid #ddd;
+    padding-top: 8px;
+  }
+  .page-break { page-break-before: always; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <p class="brand">F<span class="g">H</span><span class="o">T</span></p>
+  <p class="sub">FITNESS HUB TECH</p>
+  <h1>FHT Acesso — Documento Oficial de Regras Operacionais</h1>
+  <p>Produto: <strong>FHT Acesso</strong> (totem facial + catraca Toletus)<br/>
+     Integração: <strong>FHT Gestão</strong></p>
+  <table class="meta">
+    <tr><td><strong>Versão do app</strong></td><td>1.0.9</td></tr>
+    <tr><td><strong>Release</strong></td><td>https://github.com/fitnesshubtechanalysis/fht-acesso/releases/tag/v1.0.9</td></tr>
+    <tr><td><strong>Data do documento</strong></td><td>04/09/2026</td></tr>
+    <tr><td><strong>Classificação</strong></td><td>Interno — operação de academia / piloto</td></tr>
+    <tr><td><strong>Elaborado por</strong></td><td>Fitness Hub Tech</td></tr>
+  </table>
+</div>
+
+<h2>1. Objetivo</h2>
+<p>
+Este documento formaliza as regras de negócio e de operação do <strong>FHT Acesso 1.0.9</strong>,
+conforme requisitos validados com a operação (recepção, catraca livre e dual-câmera).
+Serve como referência oficial para instalação na academia e para evolução futura do
+controle de acesso rigoroso.
+</p>
+
+<h2>2. Checklist de conformidade (v1.0.9)</h2>
+<table class="grid">
+  <thead>
+    <tr><th>#</th><th>Requisito</th><th>Status</th><th>Como está na 1.0.9</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td>Cadastro facial — botão Capturar funcional</td>
+      <td class="ok">ATENDE</td>
+      <td>Hit-test do preview corrigido; enroll com Haar; conflito de rosto duplicado tratado.</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>Leitura facial com catraca livre — registra entrada/saída sem bloquear “já está dentro / já saiu”</td>
+      <td class="ok">ATENDE</td>
+      <td><code>freeGateMode=true</code>: facial libera e registra eventos; presença não impede nova passagem.</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td>Trava de câmeras: se uma lane está lendo, a outra não abre</td>
+      <td class="ok">ATENDE</td>
+      <td><code>CanLaneTakeUi</code> / <code>SetActiveLane</code> — evita saída apagar o nome da entrada e vice-versa.</td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td>Câmera de saída: não reconhecer gente longe</td>
+      <td class="ok">ATENDE</td>
+      <td>Perfil <code>ExitDistance</code> (rosto grande/central) + ROI de movimento mais estreita.</td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td>Câmera de entrada: não abrir com qualquer movimento</td>
+      <td class="ok">ATENDE</td>
+      <td>Abre só com movimento na ROI <strong>e</strong> rosto próximo (<code>ApproachPresence</code>).</td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td>Nome correto na tela de sucesso (não misturar pessoa)</td>
+      <td class="ok">ATENDE</td>
+      <td>Nome amarrado à lane ativa; UI não é roubada pela outra câmera no meio do fluxo.</td>
+    </tr>
+    <tr>
+      <td>7</td>
+      <td>Horário real de entrada/saída enviado à API (não evento “preso” de horas atrás)</td>
+      <td class="ok">ATENDE</td>
+      <td>Evento usa <code>occurredAt</code> no momento da passagem confirmada; sync envia <code>passageConfirmed</code> + timestamp UTC.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="box orange">
+  <strong>Atenção de configuração na academia</strong><br/>
+  Não confundir <code>exitMode</code> com <code>freeGateMode</code>:<br/>
+  • <code>freeGateMode=true</code> → catraca livre / sem bloqueio de presença (piloto).<br/>
+  • <code>exitMode=facial</code> → liga câmera de saída + dual lane.<br/>
+  • <code>exitMode=free</code> → saída sem facial (só entrada facial).
+</div>
+
+<h2>3. Regras oficiais de operação</h2>
+
+<h3>3.1 Cadastro facial (atendente)</h3>
+<ul>
+  <li>Atendente seleciona o aluno e captura o rosto olhando para a câmera de entrada.</li>
+  <li>O sistema exige detecção de rosto (Haar). Se o rosto já estiver em outro aluno, o cadastro é recusado com mensagem clara.</li>
+  <li>Após cadastrar, o aluno deve aproximar-se do totem para a leitura automática.</li>
+</ul>
+
+<h3>3.2 Leitura / reconhecimento (totem)</h3>
+<ul>
+  <li>O totem só inicia leitura quando há <strong>movimento na zona central</strong> e <strong>rosto próximo</strong>.</li>
+  <li>Pessoas só passando ao fundo / de lado <strong>não devem</strong> abrir a câmera.</li>
+  <li>Na saída, o match exige rosto ainda mais próximo (ignora musculação/esteira ao fundo).</li>
+</ul>
+
+<h3>3.3 Catraca livre e registro (piloto)</h3>
+<ul>
+  <li>Com <code>freeGateMode=true</code>, o sistema <strong>não bloqueia</strong> por estado “já entrou / já saiu”.</li>
+  <li>Cada passagem facial + giro da catraca gera <strong>registro de entrada ou saída</strong> para a Gestão.</li>
+  <li>O objetivo do piloto é acumular histórico real para, depois, ligar o <strong>controle de acesso rigoroso</strong> (presença) com segurança.</li>
+  <li>A liberação da catraca continua sujeita a plano/matrícula vigente (regra de negócio de autorização), independentemente da presença.</li>
+</ul>
+
+<h3>3.4 Dual-câmera e exclusão mútua de UI</h3>
+<ul>
+  <li>Enquanto a lane de entrada estiver em reconhecimento / resultado, a lane de saída <strong>não pode</strong> tomar a tela (e o inverso).</li>
+  <li>Isso evita feedback errado (nome de outra pessoa, tela “piscando” entre câmeras).</li>
+</ul>
+
+<h3>3.5 Identidade na tela de sucesso</h3>
+<ul>
+  <li>O nome exibido deve ser o do aluno reconhecido na lane ativa daquele ciclo.</li>
+  <li>É proibido que um reconhecimento paralelo da outra câmera sobrescreva o nome durante o fluxo.</li>
+</ul>
+
+<h3>3.6 Timestamp e sincronização com a Gestão</h3>
+<ul>
+  <li>O horário enviado à API é o <strong>momento real da passagem confirmada</strong> (<code>occurredAt</code> em UTC).</li>
+  <li>Somente eventos com passagem confirmada alimentam presença / KPIs de acesso.</li>
+  <li>Não se deve reutilizar timestamps antigos de movimentos “presos” ou tentativas sem giro de catraca.</li>
+</ul>
+
+<div class="page-break"></div>
+
+<h2>4. Configuração recomendada — academia (piloto catraca livre + dual facial)</h2>
+<table class="grid">
+  <thead><tr><th>Chave</th><th>Valor recomendado</th><th>Motivo</th></tr></thead>
+  <tbody>
+    <tr><td><code>freeGateMode</code></td><td><code>true</code></td><td>Registra entrada/saída sem bloquear por presença.</td></tr>
+    <tr><td><code>exitMode</code></td><td><code>facial</code></td><td>Ativa câmera de saída e dual lane.</td></tr>
+    <tr><td><code>webcamIndex</code></td><td>índice da câmera de entrada</td><td>Leitura de quem entra.</td></tr>
+    <tr><td><code>webcamIndexExit</code></td><td>índice da câmera de saída (≠ entrada)</td><td>Leitura de quem sai.</td></tr>
+    <tr><td><code>useFakeTurnstile</code></td><td><code>false</code></td><td>Produção com Toletus real.</td></tr>
+    <tr><td>Gestão / device</td><td>URL + unitId + deviceId/secret</td><td>Sync de alunos e eventos.</td></tr>
+  </tbody>
+</table>
+
+<div class="box">
+  Após instalar a 1.0.9, <strong>revisar</strong> o <code>appsettings.json</code> em
+  <code>%ProgramData%\FHT\Access\</code> (não apagar <code>access.db</code>).
+  Se a academia estava em notebook de teste, restaurar índices reais das câmeras da porta.
+</div>
+
+<h2>5. Instalação / atualização</h2>
+<ul>
+  <li>Setup: <code>FHT.Acesso-win-Setup.exe</code> da release v1.0.9.</li>
+  <li>Update automático: canal Gestão → feed GitHub Releases (Velopack).</li>
+  <li>Dados preservados: SQLite, faciais e settings em ProgramData.</li>
+</ul>
+
+<h2>6. Evolução futura (fora do piloto atual)</h2>
+<ul>
+  <li>Desligar <code>freeGateMode</code> para ativar controle rigoroso de presença (bloquear segunda entrada sem saída, etc.).</li>
+  <li>Somente após o histórico de eventos reais estiver confiável na Gestão.</li>
+</ul>
+
+<h2>7. Aprovação</h2>
+<table class="grid">
+  <tr><th>Papel</th><th>Nome</th><th>Data</th><th>Assinatura</th></tr>
+  <tr><td>Produto / FHT</td><td></td><td></td><td></td></tr>
+  <tr><td>Operação academia</td><td></td><td></td><td></td></tr>
+  <tr><td>Tecnologia</td><td></td><td></td><td></td></tr>
+</table>
+
+<div class="footer">
+  Fitness Hub Tech — FHT Acesso v1.0.9 — Documento oficial de regras operacionais.<br/>
+  Uso interno. Substitui orientações informais anteriores sobre presença, dual-câmera e timestamps.
+</div>
+
+</body>
+</html>
