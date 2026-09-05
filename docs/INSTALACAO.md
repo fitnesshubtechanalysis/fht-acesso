@@ -290,6 +290,24 @@ Não apague `access.db` na atualização — só se quiser recomeçar do zero.
 
 ---
 
+## 11.1 Observação pós-install (v1.0.9+)
+
+Checklist operacional depois que o totem com **atualização automática** está instalado:
+
+- [ ] Admin do totem mostra versão **1.0.9** (ou superior)
+- [ ] Após poll de update, Gestão grava `appVersion` no device (heartbeat)
+- [ ] **Verificar atualização agora** no Admin — log `[Update]` / overlay no kiosk
+- [ ] `%ProgramData%\FHT\Access\appsettings.json`: `freeGateMode=true`, `exitMode=facial`, `webcamIndex` ≠ `webcamIndexExit`
+- [ ] Smoke: Capturar facial (Haar); dual-lane (uma câmera não abre a outra)
+- [ ] Liberação manual **com motivo** na tela do atendente (não confundir com “Liberar entrada” da Gestão web)
+- [ ] Eventos de passagem com horário real na Gestão (não timestamps “presos”)
+
+Quando o histórico de passagens estiver confiável: desligar `freeGateMode` e treinar a recepção na liberação manual com motivo.
+
+Documento de regras: [FHT_ACESSO_REGRAS_OPERACIONAIS_v1.0.9.pdf](FHT_ACESSO_REGRAS_OPERACIONAIS_v1.0.9.pdf)
+
+---
+
 ## 12. Piloto assistido — checklist
 
 Use na ordem. Marque conforme for concluindo.
