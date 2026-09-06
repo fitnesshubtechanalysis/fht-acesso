@@ -210,6 +210,8 @@ public partial class App : System.Windows.Application
 
             Boot("StartBackgroundSync");
             _services.GetRequiredService<BackgroundSyncService>().Start();
+            Boot("StartGateCommandPoll");
+            _services.GetRequiredService<GateCommandPollService>().Start();
 
             Boot("StartUpdateService");
             StartUpdateService();

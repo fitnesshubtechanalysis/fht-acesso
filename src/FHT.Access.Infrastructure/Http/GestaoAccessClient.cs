@@ -201,6 +201,41 @@ public sealed class GestaoAccessClient : IGestaoAccessClient
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task<IReadOnlyList<GateCommandDto>> GetPendingGateCommandsAsync(
+        string unitId,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            Absolute($"api/v1/units/{Uri.EscapeDataString(unitId)}/access/gate-commands"));
+        ApplyAuth(request);
+        using var response = await SendWithAuthRetryAsync(request, ct).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content
+            .ReadFromJsonAsync<GateCommandsResponse>(JsonOptions, ct)
+            .ConfigureAwait(false);
+        return body?.Commands ?? new List<GateCommandDto>();
+    }
+
+    public async Task AckGateCommandAsync(
+        string unitId,
+        Guid commandId,
+        string result = "opened",
+        string? note = null,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            Absolute(
+                $"api/v1/units/{Uri.EscapeDataString(unitId)}/access/gate-commands/{commandId:D}/ack"))
+        {
+            Content = JsonContent.Create(new { result, note }, options: JsonOptions)
+        };
+        ApplyAuth(request);
+        using var response = await SendWithAuthRetryAsync(request, ct).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
+
     public async Task<string> UploadMemberPhotoAsync(
         string unitId,
         Guid memberId,
@@ -290,5 +325,10 @@ public sealed class GestaoAccessClient : IGestaoAccessClient
     private sealed class PhotoUploadResponse
     {
         public string? PhotoUrl { get; set; }
+    }
+
+    private sealed class GateCommandsResponse
+    {
+        public List<GateCommandDto>? Commands { get; set; }
     }
 }

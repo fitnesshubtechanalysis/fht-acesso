@@ -61,4 +61,16 @@ public interface IGestaoAccessClient
         string unitId,
         Guid memberId,
         CancellationToken ct = default);
+
+    /// <summary>Comandos de abrir catraca gerados pela recepção (Gestão web).</summary>
+    Task<IReadOnlyList<GateCommandDto>> GetPendingGateCommandsAsync(
+        string unitId,
+        CancellationToken ct = default);
+
+    Task AckGateCommandAsync(
+        string unitId,
+        Guid commandId,
+        string result = "opened",
+        string? note = null,
+        CancellationToken ct = default);
 }

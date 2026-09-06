@@ -34,7 +34,7 @@ public static class DependencyInjection
         // MemberPhotoSyncService registered in Infrastructure (needs data directory).
 
         services.AddSingleton<BackgroundSyncService>();
-
+        services.AddSingleton<GateCommandPollService>();
         services.AddSingleton<RecognitionService>();
 
         services.AddSingleton<PresenceService>();

@@ -52,3 +52,11 @@ public sealed record AccessEventDto(
     string? DenialReason = null,
     Guid? AttemptId = null,
     Guid? VisitId = null);
+
+public sealed record GateCommandDto(
+    Guid Id,
+    Guid? CustomerId,
+    string? FullName,
+    string Direction,
+    string? Reason,
+    DateTime OccurredAt);
