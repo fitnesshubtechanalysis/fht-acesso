@@ -60,3 +60,12 @@ public sealed record GateCommandDto(
     string Direction,
     string? Reason,
     DateTime OccurredAt);
+
+public sealed record DeviceRemoteConfigDto(
+    bool? FreeGateMode,
+    int? PassageTimeoutSec);
+
+public sealed record GateCommandsPollDto(
+    IReadOnlyList<GateCommandDto> Commands,
+    bool SyncPending,
+    DeviceRemoteConfigDto? Configuration);

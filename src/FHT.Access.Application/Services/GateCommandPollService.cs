@@ -6,7 +6,7 @@ namespace FHT.Access.Application.Services;
 
 /// <summary>
 /// Poll rápido (~3s) de liberação remota criada na Gestão (recepção web).
-/// Abre a catraca local e confirma o comando na API.
+/// Também consome sync forçado e configuração remota (freeGate).
 /// </summary>
 public sealed class GateCommandPollService : IAsyncDisposable
 {
@@ -16,6 +16,8 @@ public sealed class GateCommandPollService : IAsyncDisposable
     private readonly IGestaoAccessClient _client;
     private readonly IAccessDeviceContext _device;
     private readonly AccessFlowService _flow;
+    private readonly PresenceService _presence;
+    private readonly MemberSyncService _memberSync;
     private readonly IDiagnosticLog? _log;
     private CancellationTokenSource? _cts;
     private Task? _loop;
@@ -25,11 +27,15 @@ public sealed class GateCommandPollService : IAsyncDisposable
         IGestaoAccessClient client,
         IAccessDeviceContext device,
         AccessFlowService flow,
+        PresenceService presence,
+        MemberSyncService memberSync,
         IDiagnosticLog? log = null)
     {
         _client = client;
         _device = device;
         _flow = flow;
+        _presence = presence;
+        _memberSync = memberSync;
         _log = log;
     }
 
@@ -106,10 +112,10 @@ public sealed class GateCommandPollService : IAsyncDisposable
             return;
         }
 
-        IReadOnlyList<GateCommandDto> commands;
+        GateCommandsPollDto poll;
         try
         {
-            commands = await _client.GetPendingGateCommandsAsync(unitId, ct).ConfigureAwait(false);
+            poll = await _client.GetPendingGateCommandsAsync(unitId, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -117,7 +123,27 @@ public sealed class GateCommandPollService : IAsyncDisposable
             return;
         }
 
-        foreach (var cmd in commands)
+        if (poll.Configuration?.FreeGateMode is bool freeGate)
+        {
+            _presence.FreeGateMode = freeGate;
+            _flow.FreeGateMode = freeGate;
+        }
+
+        if (poll.SyncPending)
+        {
+            try
+            {
+                await _memberSync.SyncAsync(ct).ConfigureAwait(false);
+                await _client.AckDeviceSyncAsync(unitId, ct).ConfigureAwait(false);
+                _log?.Information("Sync forçado pela Gestão concluído.");
+            }
+            catch (Exception ex)
+            {
+                _log?.Warning($"Sync forçado falhou: {ex.Message}");
+            }
+        }
+
+        foreach (var cmd in poll.Commands)
         {
             if (ct.IsCancellationRequested)
                 break;

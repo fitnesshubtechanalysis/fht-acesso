@@ -201,7 +201,7 @@ public sealed class GestaoAccessClient : IGestaoAccessClient
         response.EnsureSuccessStatusCode();
     }
 
-    public async Task<IReadOnlyList<GateCommandDto>> GetPendingGateCommandsAsync(
+    public async Task<GateCommandsPollDto> GetPendingGateCommandsAsync(
         string unitId,
         CancellationToken ct = default)
     {
@@ -214,7 +214,10 @@ public sealed class GestaoAccessClient : IGestaoAccessClient
         var body = await response.Content
             .ReadFromJsonAsync<GateCommandsResponse>(JsonOptions, ct)
             .ConfigureAwait(false);
-        return body?.Commands ?? new List<GateCommandDto>();
+        return new GateCommandsPollDto(
+            body?.Commands ?? new List<GateCommandDto>(),
+            body?.SyncPending ?? false,
+            body?.Configuration);
     }
 
     public async Task AckGateCommandAsync(
@@ -230,6 +233,19 @@ public sealed class GestaoAccessClient : IGestaoAccessClient
                 $"api/v1/units/{Uri.EscapeDataString(unitId)}/access/gate-commands/{commandId:D}/ack"))
         {
             Content = JsonContent.Create(new { result, note }, options: JsonOptions)
+        };
+        ApplyAuth(request);
+        using var response = await SendWithAuthRetryAsync(request, ct).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task AckDeviceSyncAsync(string unitId, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            Absolute($"api/v1/units/{Uri.EscapeDataString(unitId)}/access/device-sync/ack"))
+        {
+            Content = JsonContent.Create(new { }, options: JsonOptions)
         };
         ApplyAuth(request);
         using var response = await SendWithAuthRetryAsync(request, ct).ConfigureAwait(false);
@@ -330,5 +346,7 @@ public sealed class GestaoAccessClient : IGestaoAccessClient
     private sealed class GateCommandsResponse
     {
         public List<GateCommandDto>? Commands { get; set; }
+        public bool SyncPending { get; set; }
+        public DeviceRemoteConfigDto? Configuration { get; set; }
     }
 }
