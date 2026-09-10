@@ -54,6 +54,9 @@ public sealed class AppSettings
 
     public string ExitMode { get; set; } = "free";
 
+    /// <summary>Última configVersion remota aplicada e ack enviada à Gestão.</summary>
+    public int RemoteConfigAckVersion { get; set; }
+
     public DeviceSettings? Device { get; set; }
     public SyncStateSettings? SyncState { get; set; }
 }

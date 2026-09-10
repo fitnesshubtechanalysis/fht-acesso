@@ -75,4 +75,10 @@ public interface IGestaoAccessClient
         CancellationToken ct = default);
 
     Task AckDeviceSyncAsync(string unitId, CancellationToken ct = default);
+
+    Task AckDeviceConfigAsync(
+        string unitId,
+        int configVersion,
+        IReadOnlyDictionary<string, object?> reportedSettings,
+        CancellationToken ct = default);
 }

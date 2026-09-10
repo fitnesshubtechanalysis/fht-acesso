@@ -217,7 +217,10 @@ public sealed class GestaoAccessClient : IGestaoAccessClient
         return new GateCommandsPollDto(
             body?.Commands ?? new List<GateCommandDto>(),
             body?.SyncPending ?? false,
-            body?.Configuration);
+            body?.Configuration,
+            body?.ConfigVersion
+                ?? body?.Configuration?.ConfigVersion
+                ?? 0);
     }
 
     public async Task AckGateCommandAsync(
@@ -246,6 +249,25 @@ public sealed class GestaoAccessClient : IGestaoAccessClient
             Absolute($"api/v1/units/{Uri.EscapeDataString(unitId)}/access/device-sync/ack"))
         {
             Content = JsonContent.Create(new { }, options: JsonOptions)
+        };
+        ApplyAuth(request);
+        using var response = await SendWithAuthRetryAsync(request, ct).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task AckDeviceConfigAsync(
+        string unitId,
+        int configVersion,
+        IReadOnlyDictionary<string, object?> reportedSettings,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            Absolute($"api/v1/units/{Uri.EscapeDataString(unitId)}/access/device-config/ack"))
+        {
+            Content = JsonContent.Create(
+                new { configVersion, reportedSettings },
+                options: JsonOptions)
         };
         ApplyAuth(request);
         using var response = await SendWithAuthRetryAsync(request, ct).ConfigureAwait(false);
@@ -348,5 +370,6 @@ public sealed class GestaoAccessClient : IGestaoAccessClient
         public List<GateCommandDto>? Commands { get; set; }
         public bool SyncPending { get; set; }
         public DeviceRemoteConfigDto? Configuration { get; set; }
+        public int ConfigVersion { get; set; }
     }
 }

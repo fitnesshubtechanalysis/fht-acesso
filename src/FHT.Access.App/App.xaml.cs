@@ -136,6 +136,7 @@ public partial class App : System.Windows.Application
             collection.AddFhtAccessApplication();
             collection.AddSingleton<WebcamLaneHost>();
             collection.AddSingleton<WebcamService>(sp => sp.GetRequiredService<WebcamLaneHost>().Entry);
+            collection.AddSingleton<IRemoteConfigApplier, RemoteConfigApplier>();
             collection.AddSingleton<PublicKioskViewModel>();
             collection.AddSingleton<AdminViewModel>();
             collection.AddSingleton<AttendantShellViewModel>();

@@ -6,7 +6,7 @@ namespace FHT.Access.Application.Services;
 
 /// <summary>
 /// Poll rápido (~3s) de liberação remota criada na Gestão (recepção web).
-/// Também consome sync forçado e configuração remota (freeGate).
+/// Também consome sync forçado e configuração remota (allowlist + persistência).
 /// </summary>
 public sealed class GateCommandPollService : IAsyncDisposable
 {
@@ -18,6 +18,7 @@ public sealed class GateCommandPollService : IAsyncDisposable
     private readonly AccessFlowService _flow;
     private readonly PresenceService _presence;
     private readonly MemberSyncService _memberSync;
+    private readonly IRemoteConfigApplier? _remoteConfig;
     private readonly IDiagnosticLog? _log;
     private CancellationTokenSource? _cts;
     private Task? _loop;
@@ -29,6 +30,7 @@ public sealed class GateCommandPollService : IAsyncDisposable
         AccessFlowService flow,
         PresenceService presence,
         MemberSyncService memberSync,
+        IRemoteConfigApplier? remoteConfig = null,
         IDiagnosticLog? log = null)
     {
         _client = client;
@@ -36,6 +38,7 @@ public sealed class GateCommandPollService : IAsyncDisposable
         _flow = flow;
         _presence = presence;
         _memberSync = memberSync;
+        _remoteConfig = remoteConfig;
         _log = log;
     }
 
@@ -123,10 +126,34 @@ public sealed class GateCommandPollService : IAsyncDisposable
             return;
         }
 
-        if (poll.Configuration?.FreeGateMode is bool freeGate)
+        // Compat: se não houver applier, só aplica freeGate em memória (comportamento antigo).
+        if (_remoteConfig is null)
         {
-            _presence.FreeGateMode = freeGate;
-            _flow.FreeGateMode = freeGate;
+            if (poll.Configuration?.FreeGateMode is bool freeGate)
+            {
+                _presence.FreeGateMode = freeGate;
+                _flow.FreeGateMode = freeGate;
+            }
+        }
+        else
+        {
+            var cfg = poll.Configuration;
+            if (cfg is not null && cfg.ConfigVersion is null && poll.ConfigVersion > 0)
+            {
+                cfg = cfg with { ConfigVersion = poll.ConfigVersion };
+            }
+
+            try
+            {
+                var result = _remoteConfig.ApplyIfNewer(cfg);
+                await _client
+                    .AckDeviceConfigAsync(unitId, result.ConfigVersion, result.ReportedSettings, ct)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _log?.Warning($"Config remota falhou: {ex.Message}");
+            }
         }
 
         if (poll.SyncPending)

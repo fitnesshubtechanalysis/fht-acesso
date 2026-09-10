@@ -63,9 +63,25 @@ public sealed record GateCommandDto(
 
 public sealed record DeviceRemoteConfigDto(
     bool? FreeGateMode,
-    int? PassageTimeoutSec);
+    string? ExitMode,
+    int? PassageTimeoutSec,
+    int? PassageSuccessDisplaySec,
+    int? PassageReleaseMinDisplaySec,
+    int? RecognitionCooldownSec,
+    int? VisitMaxHours,
+    double? FaceMatchThreshold,
+    bool? UseFakeTurnstile,
+    string? TurnstileIp,
+    string? TurnstileSerial,
+    int? WebcamIndex,
+    int? WebcamIndexExit,
+    bool? CameraFlipHorizontal,
+    bool? CameraFlipVertical,
+    int? CameraRotateDegrees,
+    int? ConfigVersion);
 
 public sealed record GateCommandsPollDto(
     IReadOnlyList<GateCommandDto> Commands,
     bool SyncPending,
-    DeviceRemoteConfigDto? Configuration);
+    DeviceRemoteConfigDto? Configuration,
+    int ConfigVersion = 0);
