@@ -133,7 +133,7 @@ public sealed class GateCommandPollService : IAsyncDisposable
         {
             try
             {
-                await _memberSync.SyncAsync(ct).ConfigureAwait(false);
+                await _memberSync.SyncAsync(unitId, ct, full: true).ConfigureAwait(false);
                 await _client.AckDeviceSyncAsync(unitId, ct).ConfigureAwait(false);
                 _log?.Information("Sync forçado pela Gestão concluído.");
             }
