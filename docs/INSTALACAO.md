@@ -247,7 +247,7 @@ Linhas úteis no log:
 
 O totem atualiza **sem intervenção humana** via Velopack. O fluxo:
 
-1. A cada 15 min (e no boot) o app consulta `GET /api/v1/units/:id/access/devices/:id/update` na Gestão.
+1. A cada 5 min (e no boot) o app consulta `GET /api/v1/units/:id/access/devices/:id/update` na Gestão.
 2. Se houver versão nova **e** o horário for dentro da janela permitida (padrão **qualquer hora**, `0/0`) — ou se for obrigatória — inicia o processo.
 3. A tela do kiosk mostra **faixa de aviso** enquanto aguarda a janela (quando a janela for restrita).
 4. Na hora: exibe **countdown de 30 s** → pausa reconhecimento → baixa com barra de progresso → reinicia automaticamente.
