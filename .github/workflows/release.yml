@@ -17,6 +17,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Verify Toletus vendor sources
+        shell: pwsh
+        run: |
+          $required = @(
+            'vendor/litenet3/src/Toletus.LiteNet3/Toletus.LiteNet3.csproj',
+            'vendor/litenet3/src/Toletus.LiteNet3.Handler/Toletus.LiteNet3.Handler.csproj'
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path $path)) {
+              throw "Missing $path — vendor/litenet3 must be committed as source (not an empty submodule)."
+            }
+          }
+          Write-Host 'vendor/litenet3 OK'
+
       - name: Extract version from tag
         id: ver
         shell: bash
