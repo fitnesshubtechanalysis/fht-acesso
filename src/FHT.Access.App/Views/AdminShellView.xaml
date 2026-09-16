@@ -82,12 +82,12 @@
                         <TextBox Text="{Binding WebcamIndexExit, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource QuietTextBox}" />
                         <TextBlock Text="Modo saída (free | facial)" Style="{StaticResource SectionLabel}" Margin="0,8,0,0" />
                         <TextBox Text="{Binding ExitMode, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource QuietTextBox}"
-                                 ToolTip="facial = reconhece saída. free = só entrada facial (não abre a câmera de saída)." />
+                                 ToolTip="facial = abre a câmera de saída em segundo plano (só captura métricas, sem UI/catraca). free = não abre a câmera de saída." />
                         <CheckBox Content="Catraca livre (registrar sem validar presença)"
                                   IsChecked="{Binding FreeGateMode}"
                                   Margin="0,10,0,0"
                                   Foreground="{StaticResource TextPrimaryBrush}" />
-                        <TextBlock Text="Com catraca livre: entrada/saída facial só registram, sem bloquear reentrada ou saída sem entrada. Plano e facial desconhecida seguem iguais."
+                        <TextBlock Text="Saída é sempre livre: a câmera de saída (modo facial) só observa em silêncio para métricas. Só a entrada aparece no visor e libera a catraca."
                                    TextWrapping="Wrap"
                                    Opacity="0.7"
                                    FontSize="11"

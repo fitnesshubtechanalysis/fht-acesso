@@ -157,32 +157,30 @@ public partial class App : System.Windows.Application
             var flow = _services.GetRequiredService<AccessFlowService>();
             flow.DeviceId = string.IsNullOrWhiteSpace(settings.DeviceId) ? null : settings.DeviceId;
             flow.PassageTimeout = TimeSpan.FromSeconds(settings.PassageTimeoutSec <= 0 ? 10 : settings.PassageTimeoutSec);
-            flow.EntryOnlyMode = settings.ExitMode != "facial";
-
-            var dualGate = settings.WebcamIndexExit >= 0 && settings.WebcamIndexExit != settings.WebcamIndex;
-            flow.DualGateMode = dualGate && string.Equals(settings.ExitMode, "facial", StringComparison.OrdinalIgnoreCase);
+            // Saída é livre: só a entrada opera catraca/UI. Câmera de saída (se houver) observa em silêncio.
+            flow.EntryOnlyMode = true;
+            flow.DualGateMode = false;
 
             var presence = _services.GetRequiredService<PresenceService>();
-            presence.EntryOnlyMode = flow.EntryOnlyMode;
-            presence.DualGateMode = flow.DualGateMode;
+            presence.EntryOnlyMode = true;
+            presence.DualGateMode = false;
             presence.FreeGateMode = settings.FreeGateMode;
             flow.FreeGateMode = settings.FreeGateMode;
 
-            if (dualGate && !flow.DualGateMode)
-            {
-                _logger?.Warning(
-                    $"Câmera saída={settings.WebcamIndexExit} configurada mas exitMode={settings.ExitMode} — " +
-                    "saída facial desligada. Use exitMode=facial ou reinicie após salvar appsettings.");
-            }
             if (settings.FreeGateMode)
             {
                 _logger?.Information(
-                    "FreeGateMode=ON — facial registra entrada/saída sem validar presença (piloto catraca livre).");
+                    "FreeGateMode=ON — facial registra entrada sem validar presença (piloto catraca livre).");
             }
             presence.RecognitionCooldown = TimeSpan.FromSeconds(
                 settings.RecognitionCooldownSec <= 0 ? 3 : settings.RecognitionCooldownSec);
             presence.StalePendingThreshold = flow.PassageTimeout + TimeSpan.FromSeconds(2);
             presence.VisitMaxDuration = TimeSpan.FromHours(settings.VisitMaxHours <= 0 ? 12 : settings.VisitMaxHours);
+            presence.EntryMaxCount = settings.EntryMaxCount < 0 ? 0 : settings.EntryMaxCount;
+            presence.EntryWindow = TimeSpan.FromMinutes(
+                settings.EntryWindowMinutes <= 0 ? 5 : settings.EntryWindowMinutes);
+            _logger?.Information(
+                $"Entry tolerance: max {presence.EntryMaxCount} in {presence.EntryWindow.TotalMinutes:0} min.");
 
             var attendantSession = _services.GetRequiredService<AttendantSessionService>();
             attendantSession.IdleTimeout = TimeSpan.FromMinutes(
@@ -323,18 +321,18 @@ public partial class App : System.Windows.Application
                     ? $"Entry camera {settings.WebcamIndex} connected (frames={lanes.Entry.FramesCaptured})."
                     : $"Entry camera {settings.WebcamIndex} NOT connected — state={lanes.Entry.State}, error={lanes.Entry.LastOpenError ?? "—"}");
 
-            if (lanes.DualGateEnabled)
+            if (lanes.ExitCameraEnabled)
             {
                 var exitOk = lanes.WaitForExitCamera(TimeSpan.FromSeconds(8));
                 _logger?.Information(
                     exitOk
-                        ? $"Exit camera {settings.WebcamIndexExit} connected (frames={lanes.Exit.FramesCaptured})."
+                        ? $"Exit camera {settings.WebcamIndexExit} connected for silent observation (frames={lanes.Exit.FramesCaptured})."
                         : $"Exit camera {settings.WebcamIndexExit} NOT connected — state={lanes.Exit.State}, error={lanes.Exit.LastOpenError ?? "—"}");
             }
             else
             {
                 _logger?.Information(
-                    $"Exit facial desligada (exitMode={settings.ExitMode}, webcamIndexExit={settings.WebcamIndexExit}).");
+                    $"Exit observation off (exitMode={settings.ExitMode}, webcamIndexExit={settings.WebcamIndexExit}).");
             }
         }
         catch (Exception ex)
@@ -355,12 +353,11 @@ public partial class App : System.Windows.Application
             var flow = services.GetRequiredService<AccessFlowService>();
             var presence = services.GetRequiredService<PresenceService>();
 
-            var dualFacial = lanes.DualGateEnabled
-                               && string.Equals(settings.ExitMode, "facial", StringComparison.OrdinalIgnoreCase);
-            flow.EntryOnlyMode = !dualFacial;
-            flow.DualGateMode = dualFacial;
-            presence.EntryOnlyMode = flow.EntryOnlyMode;
-            presence.DualGateMode = dualFacial;
+            // Entrada é a única lane que libera catraca e muda a UI do totem.
+            flow.EntryOnlyMode = true;
+            flow.DualGateMode = false;
+            presence.EntryOnlyMode = true;
+            presence.DualGateMode = false;
             presence.FreeGateMode = settings.FreeGateMode;
             flow.FreeGateMode = settings.FreeGateMode;
 
@@ -368,28 +365,31 @@ public partial class App : System.Windows.Application
             if (face is not null)
                 _logger?.Information($"Face engine ready: model={face.ModelVersion}.");
 
-            gates.ConfigureDualGate(dualFacial);
+            gates.ConfigureDualGate(false);
             var successDisplay = TimeSpan.FromSeconds(
                 settings.PassageSuccessDisplaySec <= 0 ? 5 : settings.PassageSuccessDisplaySec);
             var releaseMinDisplay = TimeSpan.FromSeconds(
                 settings.PassageReleaseMinDisplaySec <= 0 ? 3 : settings.PassageReleaseMinDisplaySec);
             gates.BindCameras(
                 () => lanes.Entry.GetJpegFrame(),
-                () => IsApproachSignal(lanes.Entry, face, FaceDetectionOptions.ApproachPresence),
-                lanes.DualGateEnabled
-                    ? () => lanes.Exit.GetJpegFrame()
-                    : null,
-                lanes.DualGateEnabled
-                    ? () => IsApproachSignal(lanes.Exit, face, FaceDetectionOptions.ApproachPresence)
-                    : null);
+                () => IsApproachSignal(lanes.Entry, face, FaceDetectionOptions.ApproachPresence));
             gates.ConfigureKioskDisplay(successDisplay, releaseMinDisplay);
             gates.Start();
+
+            var exitObserve = services.GetRequiredService<ExitObservationService>();
+            if (lanes.ExitCameraEnabled && lanes.Exit.State == WebcamConnectionState.Connected)
+            {
+                exitObserve.BindCamera(
+                    () => lanes.Exit.GetJpegFrame(),
+                    () => IsApproachSignal(lanes.Exit, face, FaceDetectionOptions.ApproachPresence));
+                exitObserve.Start();
+            }
 
             _logger?.Information(
                 $"Gate lanes: entry cam={settings.WebcamIndex} state={lanes.Entry.State}, " +
                 $"exit cam={settings.WebcamIndexExit} state={lanes.Exit.State}, " +
-                $"dualFacial={dualFacial}, exitMode={settings.ExitMode}, freeGate={settings.FreeGateMode}, " +
-                $"exitEngine={dualFacial && lanes.Exit.State == WebcamConnectionState.Connected}");
+                $"exitObserve={lanes.ExitCameraEnabled && lanes.Exit.State == WebcamConnectionState.Connected}, " +
+                $"exitMode={settings.ExitMode}, freeGate={settings.FreeGateMode}");
         }
         catch (Exception ex)
         {
@@ -477,6 +477,9 @@ public partial class App : System.Windows.Application
 
             var gates = _services?.GetService<GateLaneEngineHost>();
             gates?.DisposeAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
+
+            var exitObserve = _services?.GetService<ExitObservationService>();
+            exitObserve?.DisposeAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult();
 
             var visitExpiry = _services?.GetService<VisitExpiryService>();
             visitExpiry?.DisposeAsync().AsTask().ConfigureAwait(false).GetAwaiter().GetResult();

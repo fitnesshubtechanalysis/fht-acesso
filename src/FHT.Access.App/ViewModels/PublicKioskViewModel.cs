@@ -232,9 +232,8 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
             return;
 
         _subscribed = true;
+        // Only the entry camera drives the kiosk viewer.
         _lanes.Entry.FrameReady += OnFrameReady;
-        if (_lanes.DualGateEnabled)
-            _lanes.Exit.FrameReady += OnFrameReady;
         RefreshOnlineStatus();
     }
 
@@ -245,7 +244,6 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
 
         _subscribed = false;
         _lanes.Entry.FrameReady -= OnFrameReady;
-        _lanes.Exit.FrameReady -= OnFrameReady;
     }
 
     public void SetOnline(bool online) => IsOnline = online;
@@ -281,8 +279,7 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
         => _ = _dispatcher.BeginInvoke(() => ApplyState(state));
 
     private void OnActiveLaneChanged(object? sender, EventArgs e)
-        => _ = _dispatcher.BeginInvoke(() =>
-            _lanes.SetActivePreviewLane(_states.ActiveLane == AccessDirection.Exit));
+        => _ = _dispatcher.BeginInvoke(() => _lanes.SetActivePreviewLane(exitLane: false));
 
     private void ApplyState(AccessUiState state)
     {

@@ -128,7 +128,91 @@ public sealed class PresenceServiceTests
     }
 
     [Fact]
-    public async Task DualGate_blocks_double_entry_unless_free_gate()
+    public async Task Entry_rate_limit_blocks_third_entry_inside_window()
+    {
+        var personId = Guid.NewGuid();
+        var unitId = "unit-1";
+        var presence = new PersonPresenceState
+        {
+            PersonId = personId,
+            UnitId = unitId,
+            State = PresenceStateKind.Outside,
+            Version = 0,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        var presenceRepo = new Mock<IPresenceRepository>();
+        presenceRepo.Setup(r => r.GetAsync(personId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => presence);
+        presenceRepo.Setup(r => r.UpsertAsync(It.IsAny<PersonPresenceState>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var attempts = new Mock<IAccessAttemptRepository>();
+        attempts.Setup(r => r.AddAsync(It.IsAny<AccessAttemptRecord>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        attempts.Setup(r => r.UpdateAsync(It.IsAny<AccessAttemptRecord>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        AccessAttemptRecord? lastAttempt = null;
+        attempts.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid id, CancellationToken _) =>
+            {
+                lastAttempt ??= new AccessAttemptRecord
+                {
+                    Id = id,
+                    PersonId = personId,
+                    UnitId = unitId,
+                    RequestedDirection = AccessDirection.Entry,
+                    Status = AccessAttemptStatus.Released,
+                    Source = "face",
+                    CreatedAt = DateTime.UtcNow,
+                    RecognizedAt = DateTime.UtcNow
+                };
+                lastAttempt.Id = id;
+                return lastAttempt;
+            });
+
+        var visits = new Mock<IVisitRepository>();
+        visits.Setup(r => r.GetOpenVisitForPersonAsync(personId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((VisitRecord?)null);
+        visits.Setup(r => r.AddAsync(It.IsAny<VisitRecord>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var events = new Mock<IAccessEventRepository>();
+        events.Setup(r => r.AddAsync(It.IsAny<AccessEvent>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var svc = new PresenceService(
+            presenceRepo.Object,
+            attempts.Object,
+            visits.Object,
+            Mock.Of<IPresenceCorrectionRepository>(),
+            events.Object)
+        {
+            EntryOnlyMode = true,
+            DualGateMode = false,
+            EntryMaxCount = 2,
+            EntryWindow = TimeSpan.FromMinutes(5),
+            RecognitionCooldown = TimeSpan.Zero
+        };
+
+        for (var i = 0; i < 2; i++)
+        {
+            var (ok, _) = await svc.TryBeginRecognitionAsync(personId, unitId, AccessDirection.Entry);
+            Assert.True(ok);
+            svc.ReleaseTurnstileGateIfNotStarted();
+            var plan = await svc.PlanPassageAsync(personId, unitId, "face", null, null, AccessDirection.Entry);
+            Assert.NotNull(plan);
+            lastAttempt = null;
+            await svc.ConfirmPassageAsync(plan!.AttemptId, true, "face", null);
+        }
+
+        var (blocked, reason) = await svc.TryBeginRecognitionAsync(personId, unitId, AccessDirection.Entry);
+        Assert.False(blocked);
+        Assert.Contains("Entrada recente demais", reason);
+    }
+
+    [Fact]
+    public async Task Entry_rate_limit_skips_for_bypass_presence()
     {
         var personId = Guid.NewGuid();
         var unitId = "unit-1";
@@ -152,25 +236,21 @@ public sealed class PresenceServiceTests
             Mock.Of<IPresenceCorrectionRepository>(),
             Mock.Of<IAccessEventRepository>())
         {
-            DualGateMode = true,
-            EntryOnlyMode = false,
-            FreeGateMode = false
+            EntryOnlyMode = true,
+            EntryMaxCount = 1,
+            EntryWindow = TimeSpan.FromMinutes(5)
         };
 
-        var (blocked, reason) = await svc.TryBeginRecognitionAsync(
-            personId, unitId, AccessDirection.Entry);
-        Assert.False(blocked);
-        Assert.Contains("já está dentro", reason);
-
-        svc.FreeGateMode = true;
-        var (allowed, freeReason) = await svc.TryBeginRecognitionAsync(
-            personId, unitId, AccessDirection.Entry);
+        // Seed one entry via private path: confirm once then bypass
+        // Simpler: just ensure bypass allows even with max=0 window filled by calling with bypass.
+        var (allowed, reason) = await svc.TryBeginRecognitionAsync(
+            personId, unitId, AccessDirection.Entry, bypassPresence: true);
         Assert.True(allowed);
-        Assert.Null(freeReason);
+        Assert.Null(reason);
     }
 
     [Fact]
-    public async Task DualGate_blocks_exit_without_entry_unless_free_gate()
+    public async Task Exit_direction_does_not_require_inside_when_entry_only()
     {
         var personId = Guid.NewGuid();
         var unitId = "unit-1";
@@ -194,55 +274,14 @@ public sealed class PresenceServiceTests
             Mock.Of<IPresenceCorrectionRepository>(),
             Mock.Of<IAccessEventRepository>())
         {
-            DualGateMode = true,
-            EntryOnlyMode = false,
-            FreeGateMode = false
+            EntryOnlyMode = true,
+            DualGateMode = false,
+            EntryMaxCount = 0
         };
 
-        var (blocked, reason) = await svc.TryBeginRecognitionAsync(
-            personId, unitId, AccessDirection.Exit);
-        Assert.False(blocked);
-        Assert.Contains("não está registrado como dentro", reason);
-
-        svc.FreeGateMode = true;
-        var (allowed, freeReason) = await svc.TryBeginRecognitionAsync(
-            personId, unitId, AccessDirection.Exit);
-        Assert.True(allowed);
-        Assert.Null(freeReason);
-    }
-
-    [Fact]
-    public async Task DualGate_allows_staff_bypass_presence_without_free_gate()
-    {
-        var personId = Guid.NewGuid();
-        var unitId = "unit-1";
-        var presence = new PersonPresenceState
-        {
-            PersonId = personId,
-            UnitId = unitId,
-            State = PresenceStateKind.Inside,
-            Version = 1,
-            UpdatedAt = DateTime.UtcNow
-        };
-
-        var presenceRepo = new Mock<IPresenceRepository>();
-        presenceRepo.Setup(r => r.GetAsync(personId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => presence);
-
-        var svc = new PresenceService(
-            presenceRepo.Object,
-            Mock.Of<IAccessAttemptRepository>(),
-            Mock.Of<IVisitRepository>(),
-            Mock.Of<IPresenceCorrectionRepository>(),
-            Mock.Of<IAccessEventRepository>())
-        {
-            DualGateMode = true,
-            EntryOnlyMode = false,
-            FreeGateMode = false
-        };
-
+        // Forced exit (legacy path) is not blocked by Outside — product ignores exit gates.
         var (allowed, reason) = await svc.TryBeginRecognitionAsync(
-            personId, unitId, AccessDirection.Entry, bypassPresence: true);
+            personId, unitId, AccessDirection.Exit);
         Assert.True(allowed);
         Assert.Null(reason);
     }

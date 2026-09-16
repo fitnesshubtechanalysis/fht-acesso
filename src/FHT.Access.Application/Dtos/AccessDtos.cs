@@ -78,6 +78,8 @@ public sealed record DeviceRemoteConfigDto(
     bool? CameraFlipHorizontal,
     bool? CameraFlipVertical,
     int? CameraRotateDegrees,
+    int? EntryMaxCount,
+    int? EntryWindowMinutes,
     int? ConfigVersion);
 
 public sealed record GateCommandsPollDto(

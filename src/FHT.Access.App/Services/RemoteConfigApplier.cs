@@ -98,6 +98,10 @@ public sealed class RemoteConfigApplier : IRemoteConfigApplier
             _settings.CameraFlipVertical = cfv;
         if (config.CameraRotateDegrees is int rot)
             _settings.CameraRotateDegrees = rot;
+        if (config.EntryMaxCount is int emc && emc >= 0)
+            _settings.EntryMaxCount = emc;
+        if (config.EntryWindowMinutes is int ewm && ewm > 0)
+            _settings.EntryWindowMinutes = ewm;
     }
 
     private void ApplyRuntime()
@@ -111,15 +115,15 @@ public sealed class RemoteConfigApplier : IRemoteConfigApplier
         _presence.StalePendingThreshold = _flow.PassageTimeout + TimeSpan.FromSeconds(2);
         _presence.VisitMaxDuration = TimeSpan.FromHours(
             _settings.VisitMaxHours <= 0 ? 12 : _settings.VisitMaxHours);
+        _presence.EntryMaxCount = _settings.EntryMaxCount < 0 ? 0 : _settings.EntryMaxCount;
+        _presence.EntryWindow = TimeSpan.FromMinutes(
+            _settings.EntryWindowMinutes <= 0 ? 5 : _settings.EntryWindowMinutes);
 
-        var dualGate = _settings.WebcamIndexExit >= 0
-                       && _settings.WebcamIndexExit != _settings.WebcamIndex;
-        var dualFacial = dualGate
-                         && string.Equals(_settings.ExitMode, "facial", StringComparison.OrdinalIgnoreCase);
-        _flow.EntryOnlyMode = !dualFacial;
-        _flow.DualGateMode = dualFacial;
-        _presence.EntryOnlyMode = _flow.EntryOnlyMode;
-        _presence.DualGateMode = dualFacial;
+        // Exit is free + silent observation only — never dual-gate the turnstile/UI.
+        _flow.EntryOnlyMode = true;
+        _flow.DualGateMode = false;
+        _presence.EntryOnlyMode = true;
+        _presence.DualGateMode = false;
 
         if (_gates is not null)
         {
@@ -142,6 +146,8 @@ public sealed class RemoteConfigApplier : IRemoteConfigApplier
             ["passageReleaseMinDisplaySec"] = _settings.PassageReleaseMinDisplaySec,
             ["recognitionCooldownSec"] = _settings.RecognitionCooldownSec,
             ["visitMaxHours"] = _settings.VisitMaxHours,
+            ["entryMaxCount"] = _settings.EntryMaxCount,
+            ["entryWindowMinutes"] = _settings.EntryWindowMinutes,
             ["faceMatchThreshold"] = _settings.FaceMatchThreshold,
             ["useFakeTurnstile"] = _settings.UseFakeTurnstile,
             ["turnstileIp"] = _settings.TurnstileIp,

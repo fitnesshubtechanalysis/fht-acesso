@@ -61,6 +61,8 @@ public static class DependencyInjection
 
         services.AddSingleton<GateLaneEngineHost>();
 
+        services.AddSingleton<ExitObservationService>();
+
         services.AddSingleton<AttendantSessionService>();
 
         // UpdateService is registered in the App layer (needs platform-specific IAppUpdater and options).

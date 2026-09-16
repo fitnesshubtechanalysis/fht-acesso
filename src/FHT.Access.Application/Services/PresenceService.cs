@@ -26,21 +26,28 @@ public sealed class PresenceService
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _personLocks = new();
     private readonly SemaphoreSlim _turnstileLock = new(1, 1);
     private readonly ConcurrentDictionary<Guid, DateTime> _cooldownUntil = new();
+    private readonly ConcurrentDictionary<Guid, List<DateTime>> _recentEntries = new();
 
     public TimeSpan RecognitionCooldown { get; set; } = TimeSpan.FromSeconds(3);
     /// <summary>Auto-clear stuck EntryPending/ExitPending (align with passage timeout).</summary>
     public TimeSpan StalePendingThreshold { get; set; } = TimeSpan.FromSeconds(12);
     public TimeSpan VisitMaxDuration { get; set; } = TimeSpan.FromHours(12);
 
+    /// <summary>Max confirmed entries inside <see cref="EntryWindow"/> (0 = unlimited).</summary>
+    public int EntryMaxCount { get; set; } = 2;
+
+    /// <summary>Sliding window for re-entry tolerance (e.g. 2 entries / 5 minutes).</summary>
+    public TimeSpan EntryWindow { get; set; } = TimeSpan.FromMinutes(5);
+
     /// <summary>Piloto: saída livre — presença estimada, sempre libera entrada.</summary>
     public bool EntryOnlyMode { get; set; } = true;
 
-    /// <summary>Duas câmeras — direção fixa por lane (entrada/saída).</summary>
+    /// <summary>Legacy dual-lane presence. Product keeps this false — exit is observe-only.</summary>
     public bool DualGateMode { get; set; }
 
     /// <summary>
-    /// Piloto: catraca livre — facial registra entrada/saída sem validar presença
-    /// (permite reentrada, saída sem entrada prévia, etc.).
+    /// Piloto: catraca livre — facial registra entrada sem validar presença Inside/Outside.
+    /// Re-entry rate limit still applies (unless bypassPresence).
     /// </summary>
     public bool FreeGateMode { get; set; }
 
@@ -127,20 +134,25 @@ public sealed class PresenceService
 
                 var skipPresenceRules = FreeGateMode || bypassPresence;
 
-                if (!skipPresenceRules && !EntryOnlyMode && p.State == PresenceStateKind.Unknown)
+                // DualGate Inside/Outside coupling discontinued — exit is free / observe-only.
+                // Keep Unknown block only when DualGate is explicitly re-enabled for legacy.
+                if (!skipPresenceRules && DualGateMode && !EntryOnlyMode && p.State == PresenceStateKind.Unknown)
                     return (false, "Estado de presença indefinido — procure a recepção.");
 
-                if (!skipPresenceRules
-                    && DualGateMode
-                    && forcedDirection == AccessDirection.Exit
-                    && p.State != PresenceStateKind.Inside)
-                    return (false, "Saída não permitida — você não está registrado como dentro.");
-
-                if (!skipPresenceRules
-                    && DualGateMode
-                    && forcedDirection == AccessDirection.Entry
-                    && p.State == PresenceStateKind.Inside)
-                    return (false, "Entrada não permitida — você já está dentro.");
+                // Re-entry tolerance: max N confirmed entries inside the sliding window.
+                var treatingAsEntry = EntryOnlyMode
+                    || forcedDirection == AccessDirection.Entry
+                    || (!DualGateMode && forcedDirection is null);
+                if (!bypassPresence
+                    && treatingAsEntry
+                    && EntryMaxCount > 0
+                    && EntryWindow > TimeSpan.Zero
+                    && CountRecentEntries(personId) >= EntryMaxCount)
+                {
+                    return (
+                        false,
+                        $"Entrada recente demais — aguarde {Math.Max(1, (int)EntryWindow.TotalMinutes)} min ou procure a recepção.");
+                }
 
                 if (!await _turnstileLock.WaitAsync(0, ct).ConfigureAwait(false))
                     return (false, "Catraca aguardando passagem.");
@@ -150,6 +162,33 @@ public sealed class PresenceService
         finally
         {
             _personLocks.GetOrAdd(personId, _ => new SemaphoreSlim(1, 1)).Release();
+        }
+    }
+
+    private int CountRecentEntries(Guid personId)
+    {
+        if (!_recentEntries.TryGetValue(personId, out var list) || list.Count == 0)
+            return 0;
+
+        var cutoff = DateTime.UtcNow - EntryWindow;
+        lock (list)
+        {
+            list.RemoveAll(t => t < cutoff);
+            return list.Count;
+        }
+    }
+
+    private void RecordConfirmedEntry(Guid personId)
+    {
+        if (EntryMaxCount <= 0 || EntryWindow <= TimeSpan.Zero)
+            return;
+
+        var list = _recentEntries.GetOrAdd(personId, _ => []);
+        lock (list)
+        {
+            var cutoff = DateTime.UtcNow - EntryWindow;
+            list.RemoveAll(t => t < cutoff);
+            list.Add(DateTime.UtcNow);
         }
     }
 
@@ -263,6 +302,16 @@ public sealed class PresenceService
 
         if (attempt.RequestedDirection == AccessDirection.Entry)
         {
+            // Close any leftover open visit — exit is free and not tracked for gate logic.
+            var previous = await _visits.GetOpenVisitForPersonAsync(attempt.PersonId, ct).ConfigureAwait(false);
+            if (previous is not null)
+            {
+                previous.ExitedAt = DateTime.UtcNow;
+                previous.Status = VisitStatus.Closed;
+                previous.UpdatedAt = DateTime.UtcNow;
+                await _visits.UpdateAsync(previous, ct).ConfigureAwait(false);
+            }
+
             var visit = new VisitRecord
             {
                 Id = Guid.NewGuid(),
@@ -285,6 +334,8 @@ public sealed class PresenceService
             accessEvent = await RecordEventAsync(
                 attempt, AccessEventStatus.Allowed, true, source, deviceId, visitId, ct)
                 .ConfigureAwait(false);
+
+            RecordConfirmedEntry(attempt.PersonId);
         }
         else
         {
