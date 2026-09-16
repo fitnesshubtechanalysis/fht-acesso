@@ -248,9 +248,9 @@ Linhas úteis no log:
 O totem atualiza **sem intervenção humana** via Velopack. O fluxo:
 
 1. A cada 15 min (e no boot) o app consulta `GET /api/v1/units/:id/access/devices/:id/update` na Gestão.
-2. Se houver versão nova **e** o horário for dentro da janela permitida (padrão 20h–5h) — ou se for obrigatória — inicia o processo.
-3. A tela do kiosk mostra **faixa de aviso** enquanto aguarda a janela.
-4. Na hora: exibe **countdown de 60 s** → pausa reconhecimento → baixa com barra de progresso → reinicia automaticamente.
+2. Se houver versão nova **e** o horário for dentro da janela permitida (padrão **qualquer hora**, `0/0`) — ou se for obrigatória — inicia o processo.
+3. A tela do kiosk mostra **faixa de aviso** enquanto aguarda a janela (quando a janela for restrita).
+4. Na hora: exibe **countdown de 30 s** → pausa reconhecimento → baixa com barra de progresso → reinicia automaticamente.
 
 ### Registrar uma versão nova na Gestão
 
@@ -264,14 +264,14 @@ Content-Type: application/json
 {
   "latestVersion": "1.2.3",
   "downloadUrl": "https://github.com/seu-org/fht-acesso/releases/download/v1.2.3/",
-  "mandatory": false,
-  "applyAfterHour": 20,
-  "applyBeforeHour": 5
+  "mandatory": true,
+  "applyAfterHour": 0,
+  "applyBeforeHour": 0
 }
 ```
 
-`downloadUrl` deve apontar para o diretório raiz dos assets Velopack (sem `/RELEASES`).
-O totem descobre o pacote correto automaticamente via feed Velopack.
+`applyAfterHour` = `applyBeforeHour` (ex.: `0/0`) = aplica **a qualquer hora**.  
+No período de correções, use `mandatory: true` para totens já instalados atualizarem mesmo antes do patch de janela 24h.
 
 ### Dados preservados na atualização
 

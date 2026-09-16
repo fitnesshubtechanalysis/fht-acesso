@@ -12,8 +12,8 @@ public sealed class UpdateServiceOptions
 {
     public string UnitId { get; init; } = string.Empty;
     public string DeviceId { get; init; } = string.Empty;
-    public TimeSpan PollInterval { get; init; } = TimeSpan.FromMinutes(15);
-    public int CountdownSeconds { get; init; } = 60;
+    public TimeSpan PollInterval { get; init; } = TimeSpan.FromMinutes(5);
+    public int CountdownSeconds { get; init; } = 30;
     public Action<string>? LogWarning { get; init; }
     public Action<string>? LogError { get; init; }
     public Action<string>? LogInfo { get; init; }
@@ -41,8 +41,8 @@ public sealed class UpdateService : IAsyncDisposable, IDisposable
     private bool _mandatory;
     private string? _downloadUrl;
 
-    private int _applyAfterHour = 20;
-    private int _applyBeforeHour = 5;
+    private int _applyAfterHour = 0;
+    private int _applyBeforeHour = 0;
 
     public UpdateService(
         IGestaoAccessClient gestao,
@@ -242,6 +242,10 @@ public sealed class UpdateService : IAsyncDisposable, IDisposable
 
     private bool IsWithinApplyWindow()
     {
+        // Mesma hora (ex.: 0/0) = janela 24h — aplica a qualquer momento.
+        if (_applyAfterHour == _applyBeforeHour)
+            return true;
+
         var hour = DateTime.Now.Hour;
         // Ex.: applyAfterHour=20, applyBeforeHour=5 → 20h–04h59
         if (_applyAfterHour > _applyBeforeHour)
