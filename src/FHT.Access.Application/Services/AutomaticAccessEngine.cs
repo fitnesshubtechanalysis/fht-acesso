@@ -370,44 +370,54 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
 
                 FaceMatchResult? bestMatch = null;
+                var consensusHits = 0;
+                Guid? consensusMemberId = null;
+                const int requiredConsensus = 2;
 
                 for (var attempt = 0; attempt < _profile.IdentifyAttempts; attempt++)
-
                 {
-
                     if (!_mode.RecognitionEnabled)
-
                         break;
 
-
-
                     var frame = _captureJpeg?.Invoke();
-
                     if (frame is not null && frame.Length >= 100)
-
                     {
-
                         var next = await _recognition
                             .IdentifyOnlyAsync(frame, ct, _profile.FaceDetection)
                             .ConfigureAwait(false);
 
-                        if (next is not null && (bestMatch is null || next.Score >= bestMatch.Score))
+                        if (next is not null)
+                        {
+                            if (bestMatch is null || next.Score >= bestMatch.Score)
+                                bestMatch = next;
 
-                            bestMatch = next;
+                            // Exige o mesmo MemberId em 2 frames — evita oscilação 1ª leitura errada.
+                            if (consensusMemberId == next.MemberId)
+                            {
+                                consensusHits++;
+                            }
+                            else
+                            {
+                                consensusMemberId = next.MemberId;
+                                consensusHits = 1;
+                            }
 
+                            if (consensusHits >= requiredConsensus)
+                                break;
+                        }
+                        else
+                        {
+                            consensusHits = 0;
+                            consensusMemberId = null;
+                        }
                     }
 
-
-
-                    if (bestMatch is not null)
-
-                        break;
-
-
-
                     await Task.Delay(IdentifyInterval, ct).ConfigureAwait(false);
-
                 }
+
+                // Sem consenso de 2 frames, descarta match isolado (falso positivo típico).
+                if (consensusHits < requiredConsensus)
+                    bestMatch = null;
 
 
 

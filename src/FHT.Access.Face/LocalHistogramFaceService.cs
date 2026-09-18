@@ -29,10 +29,11 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
     private const int CellBins = 16;
     private const int SpatialLen = Grid * Grid * CellBins;
     private const int SfaceLen = 128;
-    private const float SfaceDefaultThreshold = 0.42f;
-    private const float SpatialDefaultThreshold = 0.50f;
+    // Floors altos: catraca liberava pessoa errada com 0.42/0.08 (oscilação 1:N).
+    private const float SfaceDefaultThreshold = 0.48f;
+    private const float SpatialDefaultThreshold = 0.55f;
     /// <summary>Exige diferença vs 2º lugar — evita liberar desconhecido como cadastro recente.</summary>
-    private const float MinScoreMargin = 0.08f;
+    private const float MinScoreMargin = 0.10f;
     private const int DetectMaxWidth = 640;
 
     private static readonly byte[] SfaceMagic = "SF01"u8.ToArray();
@@ -336,8 +337,10 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
             {
                 using var work = Downscale(variant, detect.DetectMaxWidth);
                 using var enhanced = EnhanceLighting(work);
+                // Identify: só Haar estrito (centro/área). Loose só no enroll —
+                // crop de fundo gerava oscilação (libera outra pessoa).
                 var face = DetectLargestFace(enhanced, detect)
-                           ?? DetectLargestFaceLoose(enhanced, detect);
+                           ?? (enroll ? DetectLargestFaceLoose(enhanced, detect) : null);
                 Mat region;
                 if (face is { } rect)
                 {

@@ -198,7 +198,7 @@ public sealed class JsonSettingsStore : ISettingsStore
         var json = File.ReadAllText(_filePath);
         var settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? CreateDefaults();
         ApplyDualCameraDefaults(settings);
-        if (settings.FaceMatchThreshold > 0.7 || settings.FaceMatchThreshold < 0.42)
+        if (settings.FaceMatchThreshold > 0.7 || settings.FaceMatchThreshold < 0.48)
         {
             settings.FaceMatchThreshold = 0.48;
             WriteUnlocked(settings);
