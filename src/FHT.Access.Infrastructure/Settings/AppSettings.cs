@@ -27,7 +27,7 @@ public sealed class AppSettings
     public bool CameraFlipVertical { get; set; }
     /// <summary>Rotação aplicada ao frame: 0, 90, 180 ou 270.</summary>
     public int CameraRotateDegrees { get; set; }
-    public double FaceMatchThreshold { get; set; } = 0.48;
+    public double FaceMatchThreshold { get; set; } = 0.55;
     public string AdminPin { get; set; } = "1234";
     public int AttendantIdleMinutes { get; set; } = 5;
     public bool KioskPortrait { get; set; } = true;

@@ -3,17 +3,14 @@ using FHT.Access.Infrastructure.Settings;
 namespace FHT.Access.App.Services;
 
 /// <summary>
-/// Entry + exit webcams on a single PC. Kiosk preview always uses the entry camera.
-/// Exit camera (when enabled) runs silent observation only — never shown on the viewer.
+/// Câmera de entrada. A de saída não abre: não reconhece, não mostra nome e não libera.
 /// </summary>
 public sealed class WebcamLaneHost : IDisposable
 {
-    private const int ExitStaggerMs = 2500;
-
     public WebcamService Entry { get; } = new();
     public WebcamService Exit { get; } = new();
 
-    /// <summary>True when an exit camera index is configured and distinct from entry.</summary>
+    /// <summary>A câmera de saída permanece desligada.</summary>
     public bool ExitCameraEnabled { get; private set; }
 
     /// <summary>
@@ -55,13 +52,10 @@ public sealed class WebcamLaneHost : IDisposable
         Exit.MotionRoiHeightFraction = 0.48;
         Exit.MotionRoiCenterY = 0.40;
 
-        var indexOk = settings.WebcamIndexExit >= 0
-                      && settings.WebcamIndexExit != settings.WebcamIndex;
-        // free = do not open exit cam. facial / observe / anything else with valid index → open for silent capture.
-        var mode = (settings.ExitMode ?? "free").Trim();
-        var observe = !string.Equals(mode, "free", StringComparison.OrdinalIgnoreCase)
-                      && !string.Equals(mode, "off", StringComparison.OrdinalIgnoreCase);
-        ExitCameraEnabled = indexOk && observe;
+        // A câmera de saída fica desligada. Só a de entrada reconhece e libera.
+        _ = settings.WebcamIndexExit;
+        _ = settings.ExitMode;
+        ExitCameraEnabled = false;
         ActivePreview = Entry;
     }
 
@@ -72,12 +66,7 @@ public sealed class WebcamLaneHost : IDisposable
         if (!Entry.IsRunning)
             Entry.Start(settings.WebcamIndex, settings.CameraDeviceId);
 
-        if (ExitCameraEnabled && !Exit.IsRunning)
-        {
-            // Stagger open — USB hubs often reject the 2nd open if simultaneous with the 1st.
-            Thread.Sleep(ExitStaggerMs);
-            Exit.Start(settings.WebcamIndexExit, settings.ExitCameraDeviceId);
-        }
+        Exit.Stop();
     }
 
     /// <summary>Wait until exit camera connects or timeout (call after Start).</summary>

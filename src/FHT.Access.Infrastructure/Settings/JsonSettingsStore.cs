@@ -198,9 +198,9 @@ public sealed class JsonSettingsStore : ISettingsStore
         var json = File.ReadAllText(_filePath);
         var settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? CreateDefaults();
         ApplyDualCameraDefaults(settings);
-        if (settings.FaceMatchThreshold > 0.7 || settings.FaceMatchThreshold < 0.48)
+        if (settings.FaceMatchThreshold > 0.70 || settings.FaceMatchThreshold < 0.55)
         {
-            settings.FaceMatchThreshold = 0.48;
+            settings.FaceMatchThreshold = 0.55;
             WriteUnlocked(settings);
         }
 
@@ -276,7 +276,7 @@ public sealed class JsonSettingsStore : ISettingsStore
         {
             DataDirectory = dir,
             UseFakeTurnstile = true,
-            FaceMatchThreshold = 0.48,
+            FaceMatchThreshold = 0.55,
             AdminPin = "1234",
             KioskPortrait = true,
             CameraWidth = 1920,
@@ -294,16 +294,10 @@ public sealed class JsonSettingsStore : ISettingsStore
         };
     }
 
-    /// <summary>
-    /// Two USB/indexes configured → default blank exitMode to facial.
-    /// Explicit <c>free</c> is respected (entry facial only; exit camera not used for recognition).
-    /// </summary>
+    /// <summary>Saída não usa câmera. Modo em branco fica livre para não reabrir a segunda webcam.</summary>
     private static void ApplyDualCameraDefaults(AppSettings settings)
     {
-        if (settings.WebcamIndexExit < 0 || settings.WebcamIndexExit == settings.WebcamIndex)
-            return;
-
         if (string.IsNullOrWhiteSpace(settings.ExitMode))
-            settings.ExitMode = "facial";
+            settings.ExitMode = "free";
     }
 }

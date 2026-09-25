@@ -284,9 +284,18 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
     private void ApplyState(AccessUiState state)
     {
         UiState = state;
-        MemberName = _states.MemberDisplayName ?? string.Empty;
-        ResultMessage = BuildResultMessage(state, _states.StatusMessage, _states.MemberDisplayName, _states.ActiveLane);
+        MemberName = ShowsRecognizedName(state) ? _states.MemberDisplayName ?? string.Empty : string.Empty;
+        ResultMessage = BuildResultMessage(state, _states.StatusMessage, MemberName, _states.ActiveLane);
     }
+
+    /// <summary>Nome só na decisão. Reconhecendo, ocioso ou câmera vazia não herdam o aluno anterior.</summary>
+    private static bool ShowsRecognizedName(AccessUiState state)
+        => state is AccessUiState.Recognized
+            or AccessUiState.Authorized
+            or AccessUiState.Denied
+            or AccessUiState.WaitingPassage
+            or AccessUiState.PassageConfirmed
+            or AccessUiState.ManualRelease;
 
     private static string BuildResultMessage(
         AccessUiState state,

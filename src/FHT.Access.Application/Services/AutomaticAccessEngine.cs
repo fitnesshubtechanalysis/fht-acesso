@@ -392,7 +392,7 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
                 FaceMatchResult? bestMatch = null;
                 var consensusHits = 0;
                 Guid? consensusMemberId = null;
-                const int requiredConsensus = 2;
+                const int requiredConsensus = 3;
 
                 for (var attempt = 0; attempt < _profile.IdentifyAttempts; attempt++)
                 {
@@ -408,18 +408,21 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
                         if (next is not null)
                         {
-                            if (bestMatch is null || next.Score >= bestMatch.Score)
-                                bestMatch = next;
-
-                            // Exige o mesmo MemberId em 2 frames — evita oscilação 1ª leitura errada.
                             if (consensusMemberId == next.MemberId)
                             {
                                 consensusHits++;
+                                if (bestMatch is null
+                                    || bestMatch.MemberId != next.MemberId
+                                    || next.Score >= bestMatch.Score)
+                                {
+                                    bestMatch = next;
+                                }
                             }
                             else
                             {
                                 consensusMemberId = next.MemberId;
                                 consensusHits = 1;
+                                bestMatch = next;
                             }
 
                             if (consensusHits >= requiredConsensus)
@@ -435,7 +438,7 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
                     await Task.Delay(IdentifyInterval, ct).ConfigureAwait(false);
                 }
 
-                // Sem consenso de 2 frames, descarta match isolado (falso positivo típico).
+                // Sem o mesmo aluno em 3 quadros, não libera e não mostra nome.
                 if (consensusHits < requiredConsensus)
                     bestMatch = null;
 

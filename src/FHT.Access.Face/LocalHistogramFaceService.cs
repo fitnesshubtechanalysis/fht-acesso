@@ -30,10 +30,10 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
     private const int SpatialLen = Grid * Grid * CellBins;
     private const int SfaceLen = 128;
     // Floors altos: catraca liberava pessoa errada com 0.42/0.08 (oscilação 1:N).
-    private const float SfaceDefaultThreshold = 0.48f;
-    private const float SpatialDefaultThreshold = 0.55f;
-    /// <summary>Exige diferença vs 2º lugar — evita liberar desconhecido como cadastro recente.</summary>
-    private const float MinScoreMargin = 0.10f;
+    private const float SfaceDefaultThreshold = 0.55f;
+    private const float SpatialDefaultThreshold = 0.72f;
+    /// <summary>Exige diferença vs 2º lugar — evita liberar desconhecido como o aluno mais parecido.</summary>
+    private const float MinScoreMargin = 0.12f;
     private const int DetectMaxWidth = 640;
 
     private static readonly byte[] SfaceMagic = "SF01"u8.ToArray();
@@ -194,6 +194,10 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
             bestSface ? SfaceDefaultThreshold : SpatialDefaultThreshold);
 
         if (bestId is null || bestScore < cutoff)
+            return null;
+
+        // Com SFace carregado, histograma/espacial não abre a catraca nem escolhe um nome.
+        if (_useSface && !bestSface)
             return null;
 
         if (bestScore - secondBest < MinScoreMargin)
