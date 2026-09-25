@@ -70,33 +70,22 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
 
     public string ModelVersion => _useSface ? SfaceModelVersion : SpatialModelVersion;
 
-    private DateTime _presenceCacheUtc;
-    private bool _presenceCacheValue;
-    private int _presenceCacheLen;
-
     public static bool CanHydrate(string? modelVersion)
         => !string.IsNullOrWhiteSpace(modelVersion)
            && CompatibleModelVersions.Contains(modelVersion, StringComparer.Ordinal);
 
     /// <summary>
     /// Rápido: há rosto na zona da catraca para abrir o totem?
-    /// (não faz match — só Haar). Positivos são cacheados ~300 ms;
-    /// negativos não, para não travar quando a pessoa acaba de chegar.
+    /// Só Haar estrito — sem cache e sem detecção solta, para a câmera vazia
+    /// não continuar valendo como o último aluno.
     /// </summary>
     public bool HasNearbyFace(byte[]? jpeg, FaceDetectionOptions? detection = null)
     {
         if (jpeg is null || jpeg.Length < 100)
             return false;
 
-        var now = DateTime.UtcNow;
-        if (_presenceCacheValue
-            && jpeg.Length == _presenceCacheLen
-            && now - _presenceCacheUtc < TimeSpan.FromMilliseconds(300))
-            return true;
-
         EnsureEngine();
         var detect = detection ?? FaceDetectionOptions.ApproachPresence;
-        var found = false;
         try
         {
             if (!OpenCvAvailable || _frontal is null || _frontal.Empty())
@@ -111,26 +100,12 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
 
             using var work = Downscale(src, detect.DetectMaxWidth);
             using var enhanced = EnhanceLighting(work);
-            found = DetectLargestFace(enhanced, detect) is not null
-                    || DetectLargestFaceLoose(enhanced, detect) is not null;
+            return DetectLargestFace(enhanced, detect) is not null;
         }
         catch
         {
-            found = false;
+            return false;
         }
-
-        if (found)
-        {
-            _presenceCacheLen = jpeg.Length;
-            _presenceCacheUtc = now;
-            _presenceCacheValue = true;
-        }
-        else
-        {
-            _presenceCacheValue = false;
-        }
-
-        return found;
     }
 
     public async Task EnrollAsync(Guid memberId, byte[] imageBgrOrJpeg, CancellationToken ct = default)
@@ -306,9 +281,15 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
             }
             catch
             {
-                // Fall through.
+                // Identify sem rosto não pode cair no histograma do frame inteiro:
+                // a câmera vazia (ou o último JPEG preso) casava com um aluno.
+                if (!enroll)
+                    return new StoredFace();
             }
         }
+
+        if (!enroll)
+            return new StoredFace();
 
         return new StoredFace
         {
@@ -325,6 +306,8 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         using var src = Cv2.ImDecode(imageBgrOrJpeg, ImreadModes.Color);
         if (src.Empty())
         {
+            if (!enroll)
+                return new StoredFace();
             return new StoredFace { Hists256 = [BuildHistogramFromBytes(imageBgrOrJpeg)] };
         }
 

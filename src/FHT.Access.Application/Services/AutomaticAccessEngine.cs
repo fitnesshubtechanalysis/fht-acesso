@@ -69,6 +69,16 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
     private DateTime _releaseMessageShownUtc;
 
+    /// <summary>
+    /// Aluno que acabou de ser liberado. Não abre de novo enquanto o rosto
+    /// não sair da câmera — frame preso ou fundo vazio não vira outra entrada.
+    /// </summary>
+    private Guid? _latchedMemberId;
+
+    private DateTime? _faceAbsentSinceUtc;
+
+    private static readonly TimeSpan FaceAbsenceToRearm = TimeSpan.FromMilliseconds(1200);
+
     private TaskCompletionSource? _resultHold;
 
     /// <summary>How long "Entrada/Saída registrada" stays on screen.</summary>
@@ -291,6 +301,14 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
                     _approachStartedUtc = null;
 
+                    _faceAbsentSinceUtc ??= DateTime.UtcNow;
+
+                    if (_latchedMemberId is not null
+                        && DateTime.UtcNow - _faceAbsentSinceUtc.Value >= FaceAbsenceToRearm)
+                    {
+                        _latchedMemberId = null;
+                    }
+
                     if (_states.ActiveLane == _laneDirection && _states.State != AccessUiState.AutomaticIdle)
 
                         _states.ResetAutomaticIdle(_laneDirection);
@@ -304,6 +322,8 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
 
                 _approachStartedUtc ??= DateTime.UtcNow;
+
+                _faceAbsentSinceUtc = null;
 
                 var skipApproach = DateTime.UtcNow < _skipApproachUntilUtc;
 
@@ -419,6 +439,15 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
                 if (consensusHits < requiredConsensus)
                     bestMatch = null;
 
+                if (bestMatch is not null && bestMatch.MemberId == _latchedMemberId)
+                {
+                    _sessions.CompleteSession();
+                    if (_states.ActiveLane == _laneDirection)
+                        _states.ResetAutomaticIdle(_laneDirection);
+                    await Task.Delay(400, ct).ConfigureAwait(false);
+                    continue;
+                }
+
 
 
                 AccessDecision decision = bestMatch is not null
@@ -531,6 +560,8 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
                 _states.SetActiveLane(_laneDirection);
                 _releaseMessageShownUtc = DateTime.UtcNow;
+                if (decision.MemberId is { } releasedId)
+                    _latchedMemberId = releasedId;
 
                 var result = await _flow
                     .ProcessAuthorizedPassageAsync(
