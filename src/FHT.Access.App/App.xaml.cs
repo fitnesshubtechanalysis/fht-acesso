@@ -399,17 +399,14 @@ public partial class App : System.Windows.Application
     }
 
     /// <summary>
-    /// Abre o totem só com movimento na ROI e um rosto Haar no frame atual.
-    /// Sem frame, não dispara — evita reler o último JPEG preso na câmera.
+    /// Abre a tela de descanso quando há um rosto perto.
+    /// Movimento sozinho (corredor, gente longe) não abre e não libera.
     /// </summary>
     private static bool IsApproachSignal(
         WebcamService cam,
         LocalHistogramFaceService? face,
         FaceDetectionOptions presence)
     {
-        if (!cam.HasMotion())
-            return false;
-
         var jpeg = cam.GetJpegFrame();
         if (jpeg is null || jpeg.Length < 100 || face is null)
             return false;

@@ -65,6 +65,10 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
     private DateTime? _approachStartedUtc;
 
+    private DateTime? _approachLostUtc;
+
+    private static readonly TimeSpan ApproachMissGrace = TimeSpan.FromMilliseconds(500);
+
     private DateTime _skipApproachUntilUtc;
 
     private DateTime _releaseMessageShownUtc;
@@ -299,6 +303,20 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
                 {
 
+                    _approachLostUtc ??= DateTime.UtcNow;
+
+                    if (DateTime.UtcNow - _approachLostUtc.Value < ApproachMissGrace)
+
+                    {
+
+                        await Task.Delay(80, ct).ConfigureAwait(false);
+
+                        continue;
+
+                    }
+
+
+
                     _approachStartedUtc = null;
 
                     _faceAbsentSinceUtc ??= DateTime.UtcNow;
@@ -322,6 +340,8 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
 
                 _approachStartedUtc ??= DateTime.UtcNow;
+
+                _approachLostUtc = null;
 
                 _faceAbsentSinceUtc = null;
 

@@ -16,16 +16,17 @@ public sealed record FaceDetectionOptions(
     public static FaceDetectionOptions Default { get; } = new();
 
     /// <summary>
-    /// Gatilho de aproximação: rosto na zona da catraca (mais leve que identify).
+    /// Gatilho da tela de descanso: rosto perto da catraca, mesmo parado.
+    /// Rosto pequeno ou na borda (corredor) não abre.
     /// </summary>
     public static FaceDetectionOptions ApproachPresence { get; } = new(
         DetectMaxWidth: 800,
-        MinFaceSize: 32,
+        MinFaceSize: 28,
         ScaleFactor: 1.07,
         MinNeighbors: 2,
-        MinFaceAreaFraction: 0.022,
-        CenterXMargin: 0.14,
-        CenterYMargin: 0.12);
+        MinFaceAreaFraction: 0.016,
+        CenterXMargin: 0.10,
+        CenterYMargin: 0.08);
 
     /// <summary>
     /// Entrada no totem: um pouco mais permissivo que Default (distância de catraca),
@@ -33,12 +34,12 @@ public sealed record FaceDetectionOptions(
     /// </summary>
     public static FaceDetectionOptions EntryIdentify { get; } = new(
         DetectMaxWidth: 960,
-        MinFaceSize: 40,
+        MinFaceSize: 28,
         ScaleFactor: 1.07,
         MinNeighbors: 3,
-        MinFaceAreaFraction: 0.035,
-        CenterXMargin: 0.16,
-        CenterYMargin: 0.12);
+        MinFaceAreaFraction: 0.018,
+        CenterXMargin: 0.10,
+        CenterYMargin: 0.08);
 
     /// <summary>
     /// Cadastro no balcão: mais permissivo (rosto próximo, ângulo/iluminação variáveis).
