@@ -277,51 +277,78 @@ public sealed class WebcamService : IDisposable
     }
 
     /// <summary>
-    /// Abre um índice e espera os primeiros quadros. Câmera USB no Windows
-    /// costuma devolver buffer vazio antes de estabilizar.
+    /// Abre um índice e espera um quadro de verdade.
+    /// No Windows o MSMF costuma devolver tela azul; o DSHOW entra primeiro.
     /// </summary>
     private VideoCapture? OpenDeliveringCapture(int index)
     {
-        var capture = TryOpenCapture(index);
-        if (capture is null || !capture.IsOpened())
+        foreach (var width in new[] { _width, 1280 })
         {
-            capture?.Dispose();
-            return null;
+            var height = width == _width ? _height : 720;
+            var capture = OpenUsableCapture(index, width, height);
+            if (capture is not null)
+                return capture;
         }
 
-        ApplyCaptureProperties(capture, _width, _height, _previewFps);
-        if (ReadWarmFrame(capture))
-            return capture;
-
-        capture.Dispose();
-        capture = TryOpenCapture(index);
-        if (capture is null || !capture.IsOpened())
-        {
-            capture?.Dispose();
-            LastOpenError = $"Câmera {index} abriu mas não entrega frame em {_width}x{_height} nem no default.";
-            return null;
-        }
-
-        ApplyCaptureProperties(capture, 1280, 720, Math.Min(_previewFps, 30));
-        if (ReadWarmFrame(capture))
-            return capture;
-
-        LastOpenError = $"Câmera {index} não entrega frames (verifique se outra app está usando).";
-        capture.Dispose();
+        LastOpenError = $"Câmera {index} não entrega imagem utilizável.";
         return null;
+    }
+
+    private VideoCapture? OpenUsableCapture(int index, int width, int height)
+    {
+        foreach (var api in CaptureApis())
+        {
+            var capture = TryOpenCapture(index, api);
+            if (capture is null)
+                continue;
+
+            ApplyCaptureProperties(capture, width, height, width == _width ? _previewFps : Math.Min(_previewFps, 30));
+            if (ReadWarmFrame(capture))
+                return capture;
+
+            capture.Dispose();
+            Thread.Sleep(250);
+        }
+
+        return null;
+    }
+
+    private static VideoCaptureAPIs[] CaptureApis()
+    {
+        if (OperatingSystem.IsWindows())
+            return [VideoCaptureAPIs.DSHOW, VideoCaptureAPIs.MSMF];
+
+        return [VideoCaptureAPIs.ANY];
     }
 
     private static bool ReadWarmFrame(VideoCapture capture)
     {
         using var frame = new Mat();
-        for (var attempt = 0; attempt < 10; attempt++)
+        for (var attempt = 0; attempt < 12; attempt++)
         {
-            if (capture.Read(frame) && !frame.Empty() && frame.Width > 0)
+            if (capture.Read(frame) && IsUsableColorFrame(frame))
                 return true;
             Thread.Sleep(80);
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Tela azul contínua do driver não conta como câmera aberta.
+    /// </summary>
+    private static bool IsUsableColorFrame(Mat bgr)
+    {
+        if (bgr.Empty() || bgr.Width < 16 || bgr.Channels() < 3)
+            return false;
+
+        using var small = new Mat();
+        Cv2.Resize(bgr, small, new OpenCvSharp.Size(32, 24), interpolation: InterpolationFlags.Area);
+        var mean = Cv2.Mean(small);
+        var b = mean.Val0;
+        var g = mean.Val1;
+        var r = mean.Val2;
+        return !(b > 90 && r < 50 && g < 70 && b > r + 40 && b > g + 25);
     }
 
     private static int[] CopyOpenOrder(IReadOnlyList<int>? openOrder, int cameraIndex)
@@ -350,28 +377,17 @@ public sealed class WebcamService : IDisposable
             capture.Set(VideoCaptureProperties.FrameHeight, height);
         if (fps > 0)
             capture.Set(VideoCaptureProperties.Fps, fps);
+        try { capture.Set(VideoCaptureProperties.ConvertRgb, 1); } catch { /* driver-dependent */ }
         try { capture.Set(VideoCaptureProperties.AutoExposure, 0.75); } catch { /* driver-dependent */ }
     }
 
-    private static VideoCapture? TryOpenCapture(int index)
+    private static VideoCapture? TryOpenCapture(int index, VideoCaptureAPIs api)
     {
-        if (OperatingSystem.IsWindows())
-        {
-            // MSMF costuma ser mais estável em webcam integrada; DSHOW em USB.
-            foreach (var api in new[] { VideoCaptureAPIs.MSMF, VideoCaptureAPIs.DSHOW })
-            {
-                var cap = new VideoCapture(index, api);
-                if (cap.IsOpened())
-                    return cap;
-                cap.Dispose();
-            }
-        }
+        var capture = new VideoCapture(index, api);
+        if (capture.IsOpened())
+            return capture;
 
-        var fallback = new VideoCapture(index);
-        if (fallback.IsOpened())
-            return fallback;
-
-        fallback.Dispose();
+        capture.Dispose();
         return null;
     }
 
