@@ -24,4 +24,13 @@ public class EntryCameraSelectionTests
         var chosen = EntryCameraSelection.Choose(preferredIndex: 0, exitIndex: 1, workingIndices: [1, 3]);
         Assert.Equal(3, chosen);
     }
+
+    [Fact]
+    public void Tries_the_saved_entry_port_before_the_exit_port()
+    {
+        var order = EntryCameraSelection.TryOrder(preferredIndex: 0, exitIndex: 1);
+        Assert.Equal(0, order[0]);
+        Assert.Equal(1, order[^1]);
+        Assert.DoesNotContain(order.SkipLast(1), index => index == 1);
+    }
 }

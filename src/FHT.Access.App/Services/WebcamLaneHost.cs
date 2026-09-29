@@ -66,27 +66,11 @@ public sealed class WebcamLaneHost : IDisposable
 
         if (!Entry.IsRunning)
         {
-            var index = PickEntryCamera(settings);
-            Entry.Start(index, settings.CameraDeviceId);
+            var order = EntryCameraSelection.TryOrder(settings.WebcamIndex, settings.WebcamIndexExit);
+            Entry.Start(order[0], settings.CameraDeviceId, order);
         }
 
         Exit.Stop();
-    }
-
-    /// <summary>
-    /// A entrada é a câmera que entrega imagem. Se a porta USB mudou, usa a outra.
-    /// O índice da saída só entra se for a única câmera que responde.
-    /// </summary>
-    private static int PickEntryCamera(AppSettings settings)
-    {
-        var working = new List<int>();
-        for (var index = 0; index <= 5; index++)
-        {
-            if (WebcamService.CanDeliverFrame(index, settings.CameraWidth, settings.CameraHeight))
-                working.Add(index);
-        }
-
-        return EntryCameraSelection.Choose(settings.WebcamIndex, settings.WebcamIndexExit, working);
     }
 
     /// <summary>Wait until exit camera connects or timeout (call after Start).</summary>

@@ -27,4 +27,36 @@ public static class EntryCameraSelection
 
         return workingIndices[0];
     }
+
+    /// <summary>
+    /// Ordem para abrir de verdade, sem sondar antes.
+    /// A porta salva vem primeiro. A da saída só entra por último.
+    /// </summary>
+    public static IReadOnlyList<int> TryOrder(int preferredIndex, int exitIndex, int maxIndex = 5)
+    {
+        var order = new List<int>();
+
+        void Add(int index)
+        {
+            if (index < 0 || index > maxIndex || order.Contains(index))
+                return;
+            order.Add(index);
+        }
+
+        if (preferredIndex != exitIndex)
+            Add(preferredIndex);
+
+        for (var index = 0; index <= maxIndex; index++)
+        {
+            if (index != exitIndex)
+                Add(index);
+        }
+
+        Add(exitIndex);
+
+        if (order.Count == 0)
+            order.Add(0);
+
+        return order;
+    }
 }

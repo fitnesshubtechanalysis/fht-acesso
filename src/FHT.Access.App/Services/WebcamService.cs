@@ -36,6 +36,10 @@ public sealed class WebcamService : IDisposable
     private DateTime _motionUntilUtc;
     private int _warmupFrames;
     private int _cameraIndex;
+    private int[] _openOrder = [0];
+    private int _openOrderPos;
+    private bool _stickToIndex;
+    private int _emptyReads;
     private string? _deviceId;
     private int _width = 1920;
     private int _height = 1080;
@@ -85,12 +89,16 @@ public sealed class WebcamService : IDisposable
         _processFps = processFps is > 0 and <= 30 ? processFps : 8;
     }
 
-    public void Start(int cameraIndex, string? deviceId = null)
+    public void Start(int cameraIndex, string? deviceId = null, IReadOnlyList<int>? openOrder = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         Stop();
 
-        _cameraIndex = cameraIndex;
+        _openOrder = CopyOpenOrder(openOrder, cameraIndex);
+        _openOrderPos = 0;
+        _stickToIndex = false;
+        _emptyReads = 0;
+        _cameraIndex = _openOrder[0];
         _deviceId = deviceId;
         SetState(WebcamConnectionState.Reconnecting);
 
@@ -181,6 +189,14 @@ public sealed class WebcamService : IDisposable
             using var frame = new Mat();
             if (!capture.Read(frame) || frame.Empty())
             {
+                _emptyReads++;
+                if (_emptyReads < 12)
+                {
+                    Thread.Sleep(40);
+                    continue;
+                }
+
+                _emptyReads = 0;
                 SetState(WebcamConnectionState.Reconnecting);
                 lock (_sync)
                 {
@@ -190,6 +206,8 @@ public sealed class WebcamService : IDisposable
                 Thread.Sleep(500);
                 continue;
             }
+
+            _emptyReads = 0;
 
             SetState(WebcamConnectionState.Connected);
             _frameCounter++;
@@ -235,49 +253,93 @@ public sealed class WebcamService : IDisposable
                 return;
 
             _capture?.Dispose();
-            _capture = TryOpenCapture(_cameraIndex);
-            if (_capture is null || !_capture.IsOpened())
+            _capture = null;
+
+            var index = _stickToIndex
+                ? _cameraIndex
+                : _openOrder[_openOrderPos % _openOrder.Length];
+
+            var opened = OpenDeliveringCapture(index);
+            if (opened is null)
             {
-                _capture?.Dispose();
-                _capture = null;
-                LastOpenError = $"Não foi possível abrir a câmera índice {_cameraIndex}.";
+                if (!_stickToIndex)
+                    _openOrderPos++;
+                LastOpenError = $"Não foi possível abrir a câmera índice {index}.";
                 throw new InvalidOperationException(LastOpenError);
             }
 
-            // Pedir resolução alta demais (ex. 1080p no notebook) faz Read() falhar
-            // em vários drivers — tenta o pedido e, se o 1º frame vier vazio, reabre no default.
-            ApplyCaptureProperties(_capture, _width, _height, _previewFps);
-            using (var probe = new Mat())
-            {
-                if (!_capture.Read(probe) || probe.Empty())
-                {
-                    _capture.Dispose();
-                    _capture = TryOpenCapture(_cameraIndex);
-                    if (_capture is null || !_capture.IsOpened())
-                    {
-                        _capture?.Dispose();
-                        _capture = null;
-                        LastOpenError =
-                            $"Câmera {_cameraIndex} abriu mas não entrega frame em {_width}x{_height} nem no default.";
-                        throw new InvalidOperationException(LastOpenError);
-                    }
+            _capture = opened;
+            _cameraIndex = index;
+            CameraIndex = index;
+            _stickToIndex = true;
+            LastOpenError = null;
+        }
+    }
 
-                    // Default do driver (geralmente 640x480 / 1280x720).
-                    ApplyCaptureProperties(_capture, 1280, 720, Math.Min(_previewFps, 30));
-                    using var probe2 = new Mat();
-                    if (!_capture.Read(probe2) || probe2.Empty())
-                    {
-                        LastOpenError = $"Câmera {_cameraIndex} não entrega frames (verifique se outra app está usando).";
-                        _capture.Dispose();
-                        _capture = null;
-                        throw new InvalidOperationException(LastOpenError);
-                    }
-                }
+    /// <summary>
+    /// Abre um índice e espera os primeiros quadros. Câmera USB no Windows
+    /// costuma devolver buffer vazio antes de estabilizar.
+    /// </summary>
+    private VideoCapture? OpenDeliveringCapture(int index)
+    {
+        var capture = TryOpenCapture(index);
+        if (capture is null || !capture.IsOpened())
+        {
+            capture?.Dispose();
+            return null;
+        }
+
+        ApplyCaptureProperties(capture, _width, _height, _previewFps);
+        if (ReadWarmFrame(capture))
+            return capture;
+
+        capture.Dispose();
+        capture = TryOpenCapture(index);
+        if (capture is null || !capture.IsOpened())
+        {
+            capture?.Dispose();
+            LastOpenError = $"Câmera {index} abriu mas não entrega frame em {_width}x{_height} nem no default.";
+            return null;
+        }
+
+        ApplyCaptureProperties(capture, 1280, 720, Math.Min(_previewFps, 30));
+        if (ReadWarmFrame(capture))
+            return capture;
+
+        LastOpenError = $"Câmera {index} não entrega frames (verifique se outra app está usando).";
+        capture.Dispose();
+        return null;
+    }
+
+    private static bool ReadWarmFrame(VideoCapture capture)
+    {
+        using var frame = new Mat();
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            if (capture.Read(frame) && !frame.Empty() && frame.Width > 0)
+                return true;
+            Thread.Sleep(80);
+        }
+
+        return false;
+    }
+
+    private static int[] CopyOpenOrder(IReadOnlyList<int>? openOrder, int cameraIndex)
+    {
+        if (openOrder is { Count: > 0 })
+        {
+            var copy = new List<int>(openOrder.Count);
+            foreach (var index in openOrder)
+            {
+                if (index >= 0 && !copy.Contains(index))
+                    copy.Add(index);
             }
 
-            LastOpenError = null;
-            CameraIndex = _cameraIndex;
+            if (copy.Count > 0)
+                return copy.ToArray();
         }
+
+        return [cameraIndex >= 0 ? cameraIndex : 0];
     }
 
     private static void ApplyCaptureProperties(VideoCapture capture, int width, int height, int fps)
@@ -289,39 +351,6 @@ public sealed class WebcamService : IDisposable
         if (fps > 0)
             capture.Set(VideoCaptureProperties.Fps, fps);
         try { capture.Set(VideoCaptureProperties.AutoExposure, 0.75); } catch { /* driver-dependent */ }
-    }
-
-    /// <summary>
-    /// Abre o índice, exige um frame real e fecha. Usado só na escolha da câmera da entrada.
-    /// </summary>
-    public static bool CanDeliverFrame(int index, int width, int height)
-    {
-        VideoCapture? capture = null;
-        try
-        {
-            capture = TryOpenCapture(index);
-            if (capture is null || !capture.IsOpened())
-                return false;
-
-            ApplyCaptureProperties(capture, width, height, 15);
-            using var frame = new Mat();
-            for (var attempt = 0; attempt < 6; attempt++)
-            {
-                if (capture.Read(frame) && !frame.Empty() && frame.Width > 0)
-                    return true;
-                Thread.Sleep(50);
-            }
-
-            return false;
-        }
-        catch
-        {
-            return false;
-        }
-        finally
-        {
-            capture?.Dispose();
-        }
     }
 
     private static VideoCapture? TryOpenCapture(int index)
