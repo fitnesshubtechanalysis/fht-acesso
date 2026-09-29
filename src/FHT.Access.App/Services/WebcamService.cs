@@ -291,6 +291,39 @@ public sealed class WebcamService : IDisposable
         try { capture.Set(VideoCaptureProperties.AutoExposure, 0.75); } catch { /* driver-dependent */ }
     }
 
+    /// <summary>
+    /// Abre o índice, exige um frame real e fecha. Usado só na escolha da câmera da entrada.
+    /// </summary>
+    public static bool CanDeliverFrame(int index, int width, int height)
+    {
+        VideoCapture? capture = null;
+        try
+        {
+            capture = TryOpenCapture(index);
+            if (capture is null || !capture.IsOpened())
+                return false;
+
+            ApplyCaptureProperties(capture, width, height, 15);
+            using var frame = new Mat();
+            for (var attempt = 0; attempt < 6; attempt++)
+            {
+                if (capture.Read(frame) && !frame.Empty() && frame.Width > 0)
+                    return true;
+                Thread.Sleep(50);
+            }
+
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            capture?.Dispose();
+        }
+    }
+
     private static VideoCapture? TryOpenCapture(int index)
     {
         if (OperatingSystem.IsWindows())
@@ -306,7 +339,11 @@ public sealed class WebcamService : IDisposable
         }
 
         var fallback = new VideoCapture(index);
-        return fallback.IsOpened() ? fallback : null;
+        if (fallback.IsOpened())
+            return fallback;
+
+        fallback.Dispose();
+        return null;
     }
 
     private static Mat DownscaleForProcessing(Mat bgr, int maxProcessWidth)

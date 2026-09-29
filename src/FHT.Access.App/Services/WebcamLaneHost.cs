@@ -1,3 +1,4 @@
+using FHT.Access.Application.Services;
 using FHT.Access.Infrastructure.Settings;
 
 namespace FHT.Access.App.Services;
@@ -41,9 +42,9 @@ public sealed class WebcamLaneHost : IDisposable
         Entry.MotionRatioThreshold = 0.032;
         Entry.MotionPixelThreshold = 28;
         Entry.MotionHold = TimeSpan.FromMilliseconds(900);
-        Entry.MotionRoiWidthFraction = 0.42;
-        Entry.MotionRoiHeightFraction = 0.52;
-        Entry.MotionRoiCenterY = 0.44;
+        Entry.MotionRoiWidthFraction = 0.62;
+        Entry.MotionRoiHeightFraction = 0.68;
+        Entry.MotionRoiCenterY = 0.46;
 
         Exit.MotionRatioThreshold = 0.036;
         Exit.MotionPixelThreshold = 28;
@@ -64,9 +65,28 @@ public sealed class WebcamLaneHost : IDisposable
         Configure(settings);
 
         if (!Entry.IsRunning)
-            Entry.Start(settings.WebcamIndex, settings.CameraDeviceId);
+        {
+            var index = PickEntryCamera(settings);
+            Entry.Start(index, settings.CameraDeviceId);
+        }
 
         Exit.Stop();
+    }
+
+    /// <summary>
+    /// A entrada é a câmera que entrega imagem. Se a porta USB mudou, usa a outra.
+    /// O índice da saída só entra se for a única câmera que responde.
+    /// </summary>
+    private static int PickEntryCamera(AppSettings settings)
+    {
+        var working = new List<int>();
+        for (var index = 0; index <= 5; index++)
+        {
+            if (WebcamService.CanDeliverFrame(index, settings.CameraWidth, settings.CameraHeight))
+                working.Add(index);
+        }
+
+        return EntryCameraSelection.Choose(settings.WebcamIndex, settings.WebcamIndexExit, working);
     }
 
     /// <summary>Wait until exit camera connects or timeout (call after Start).</summary>

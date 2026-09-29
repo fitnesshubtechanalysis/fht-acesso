@@ -392,7 +392,7 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
                 FaceMatchResult? bestMatch = null;
                 var consensusHits = 0;
                 Guid? consensusMemberId = null;
-                const int requiredConsensus = 3;
+                const int requiredConsensus = 2;
 
                 for (var attempt = 0; attempt < _profile.IdentifyAttempts; attempt++)
                 {
@@ -428,17 +428,12 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
                             if (consensusHits >= requiredConsensus)
                                 break;
                         }
-                        else
-                        {
-                            consensusHits = 0;
-                            consensusMemberId = null;
-                        }
                     }
 
                     await Task.Delay(IdentifyInterval, ct).ConfigureAwait(false);
                 }
 
-                // Sem o mesmo aluno em 3 quadros, não libera e não mostra nome.
+                // Sem o mesmo aluno em 2 quadros, não libera e não mostra nome.
                 if (consensusHits < requiredConsensus)
                     bestMatch = null;
 

@@ -318,7 +318,7 @@ public partial class App : System.Windows.Application
 
             _logger?.Information(
                 lanes.Entry.State == WebcamConnectionState.Connected
-                    ? $"Entry camera {settings.WebcamIndex} connected (frames={lanes.Entry.FramesCaptured})."
+                    ? $"Entry camera {lanes.Entry.CameraIndex} connected (frames={lanes.Entry.FramesCaptured})."
                     : $"Entry camera {settings.WebcamIndex} NOT connected — state={lanes.Entry.State}, error={lanes.Entry.LastOpenError ?? "—"}");
 
             if (lanes.ExitCameraEnabled)
