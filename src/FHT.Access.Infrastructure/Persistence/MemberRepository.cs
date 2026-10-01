@@ -113,7 +113,8 @@ public sealed class MemberRepository : IMemberRepository
             FROM Members
             WHERE Name LIKE $q
                OR ($digits != '' AND IFNULL(Cpf, '') LIKE $digits)
-            ORDER BY Name COLLATE NOCASE
+            ORDER BY CASE WHEN lower(IFNULL(PersonType, 'customer')) = 'employee' THEN 0 ELSE 1 END,
+                     Name COLLATE NOCASE
             LIMIT $take;
             """;
         command.Parameters.AddWithValue("$q", "%" + q + "%");

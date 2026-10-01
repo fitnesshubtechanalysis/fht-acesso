@@ -321,7 +321,7 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
                     : "Pode passar na catraca."
                 : isExit
                     ? $"Olá, {name}!\n\nPode passar na saída."
-                    : $"Olá, {name}!\n\nPode passar na catraca.",
+                    : $"Olá, {name}!\nSeja bem-vindo, entrada liberada!",
             AccessUiState.Denied => AccessDecisionEvaluator.PublicReception,
             _ => string.Empty
         };

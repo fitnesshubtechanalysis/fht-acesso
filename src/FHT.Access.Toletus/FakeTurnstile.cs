@@ -6,11 +6,12 @@ namespace FHT.Access.Toletus;
 
 /// <summary>
 /// In-memory turnstile for CI and kiosk demos without hardware.
+/// Liberar o braço não inventa o giro: "Entrada registrada" só existe depois de
+/// <see cref="NotifyArmTurn"/>, que representa o Passage In/Out da placa real.
 /// </summary>
 public sealed class FakeTurnstile : ITurnstile
 {
     private readonly object _sync = new();
-    private CancellationTokenSource? _releaseCts;
     private TurnstileConnectionState _state = TurnstileConnectionState.Disconnected;
 
     public TurnstileConnectionState State
@@ -36,77 +37,40 @@ public sealed class FakeTurnstile : ITurnstile
     public Task DisconnectAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        CancelPendingRelease();
         SetState(TurnstileConnectionState.Disconnected);
         return Task.CompletedTask;
     }
 
     public Task ReleaseEntryAsync(string? top = null, string? bottom = null, CancellationToken ct = default)
-        => SimulatePassageAsync(ct);
+        => ArmWaitingPassageAsync(ct);
 
     public Task ReleaseExitAsync(string? top = null, string? bottom = null, CancellationToken ct = default)
-        => SimulatePassageAsync(ct);
+        => ArmWaitingPassageAsync(ct);
+
+    /// <summary>Giro físico simulado. Sem isso a espera termina em timeout, sem entrada registrada.</summary>
+    public void NotifyArmTurn()
+    {
+        if (State is not TurnstileConnectionState.WaitingPassage and not TurnstileConnectionState.Connected)
+            return;
+
+        PassageReceived?.Invoke(this, PassageOutcome.PassageDetected);
+        SetState(TurnstileConnectionState.Connected);
+    }
 
     public ValueTask DisposeAsync()
     {
-        CancelPendingRelease();
         SetState(TurnstileConnectionState.Disconnected);
         return ValueTask.CompletedTask;
     }
 
-    private Task SimulatePassageAsync(CancellationToken ct)
+    private Task ArmWaitingPassageAsync(CancellationToken ct)
     {
         if (State is not TurnstileConnectionState.Connected and not TurnstileConnectionState.WaitingPassage)
             throw new InvalidOperationException("Fake turnstile is not connected.");
 
-        CancelPendingRelease();
+        ct.ThrowIfCancellationRequested();
         SetState(TurnstileConnectionState.WaitingPassage);
-
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        lock (_sync)
-        {
-            _releaseCts = cts;
-        }
-
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await Task.Delay(800, cts.Token).ConfigureAwait(false);
-                PassageReceived?.Invoke(this, PassageOutcome.PassageDetected);
-                SetState(TurnstileConnectionState.Connected);
-            }
-            catch (OperationCanceledException)
-            {
-                // disconnected or superseded
-            }
-        }, CancellationToken.None);
-
         return Task.CompletedTask;
-    }
-
-    private void CancelPendingRelease()
-    {
-        CancellationTokenSource? cts;
-        lock (_sync)
-        {
-            cts = _releaseCts;
-            _releaseCts = null;
-        }
-
-        if (cts is null)
-            return;
-
-        try
-        {
-            cts.Cancel();
-        }
-        catch
-        {
-            // ignore
-        }
-
-        cts.Dispose();
     }
 
     private void SetState(TurnstileConnectionState state)

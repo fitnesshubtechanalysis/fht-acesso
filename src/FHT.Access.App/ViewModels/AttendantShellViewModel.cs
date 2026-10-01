@@ -32,6 +32,8 @@ public sealed class MemberSearchResult
     public bool HasPhoto => !string.IsNullOrWhiteSpace(PhotoUrl);
     public string FaceStatusLabel => HasFace ? "Cadastrado" : "Não cadastrado";
     public string FaceLabel => HasFace ? "Facial cadastrada" : "Sem facial";
+    public string CategoryLabel { get; init; } = "Cliente";
+    public string TypeAndFaceLabel => $"{CategoryLabel} · {FaceLabel}";
 }
 
 /// <summary>
@@ -69,6 +71,7 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
     private string _searchQuery = string.Empty;
     private string _searchStatus = string.Empty;
     private string _selectedMemberName = string.Empty;
+    private string _selectedMemberCategory = string.Empty;
     private Guid? _selectedMemberId;
     private string _enrollStatus = string.Empty;
     private string _releaseStatus = string.Empty;
@@ -229,9 +232,9 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
         AccessUiState.AttendantDashboard => "Atendimento",
         AccessUiState.MemberSearch => Intent switch
         {
-            AttendantIntent.Enroll => "Cadastrar facial — buscar aluno",
-            AttendantIntent.ManualRelease => "Liberação manual — buscar aluno",
-            _ => "Buscar aluno"
+            AttendantIntent.Enroll => "Cadastrar facial — buscar cliente ou profissional",
+            AttendantIntent.ManualRelease => "Liberação manual — buscar cliente ou profissional",
+            _ => "Buscar cliente ou profissional"
         },
         AccessUiState.Enrollment => "Cadastro facial",
         AccessUiState.EnrollmentCompleted => "Cadastro concluído",
@@ -322,6 +325,7 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
     }
 
     public bool HasPickedMember => _pickedMember is not null;
+    public string PreviewCategory => _pickedMember?.CategoryLabel ?? "—";
     public string PreviewName => _pickedMember?.Name ?? "—";
     public string PreviewCpf => _pickedMember?.CpfDisplay ?? "—";
     public string PreviewPlan => _pickedMember?.PlanLabel ?? "—";
@@ -342,6 +346,13 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
     {
         get => _selectedMemberName;
         private set => SetProperty(ref _selectedMemberName, value);
+    }
+
+    /// <summary>Rótulo só de leitura. Não há opção de a pessoa se declarar funcionário.</summary>
+    public string SelectedMemberCategory
+    {
+        get => _selectedMemberCategory;
+        private set => SetProperty(ref _selectedMemberCategory, value);
     }
 
     public string EnrollStatus
@@ -595,6 +606,7 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
         _pickedMember = value;
         OnPropertyChanged(nameof(PickedMember));
         OnPropertyChanged(nameof(HasPickedMember));
+        OnPropertyChanged(nameof(PreviewCategory));
         OnPropertyChanged(nameof(PreviewName));
         OnPropertyChanged(nameof(PreviewCpf));
         OnPropertyChanged(nameof(PreviewPlan));
@@ -642,9 +654,7 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
 
         try
         {
-            var found = await _members.SearchAsync(query, 30).ConfigureAwait(true);
-
-            if (found.Count == 0 && !string.IsNullOrWhiteSpace(_settings.UnitId))
+            if (!string.IsNullOrWhiteSpace(_settings.UnitId))
             {
                 try
                 {
@@ -660,16 +670,15 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
                         .PullByQueryAsync(_settings.UnitId.Trim(), query)
                         .ConfigureAwait(true);
                     if (pulled > 0)
-                    {
                         _logger.Information($"Attendant search pulled {pulled} member(s) from Gestão.");
-                        found = await _members.SearchAsync(query, 30).ConfigureAwait(true);
-                    }
                 }
                 catch (Exception syncEx)
                 {
                     _logger.Warning($"Attendant Gestão pull failed: {syncEx.Message}");
                 }
             }
+
+            var found = PreferStaffRecord(await _members.SearchAsync(query, 40).ConfigureAwait(true));
 
             var faceIds = await _members
                 .ListFaceMemberIdsAsync(found.Select(m => m.Id))
@@ -679,6 +688,7 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
             foreach (var member in found)
             {
                 var plan = DescribePlan(member);
+                var isEmployee = string.Equals(member.PersonType, "employee", StringComparison.OrdinalIgnoreCase);
                 Results.Add(new MemberSearchResult
                 {
                     Id = member.Id,
@@ -687,6 +697,7 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
                     HasFace = faceIds.Contains(member.Id),
                     PlanLabel = plan.Label,
                     PlanOk = plan.Ok,
+                    CategoryLabel = isEmployee ? "Profissional" : "Cliente",
                     CpfDisplay = FormatCpf(member.Cpf),
                     RegistrationDisplay = "—"
                 });
@@ -694,7 +705,7 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
 
             _didSearch = true;
             SearchStatus = Results.Count == 0
-                ? "Nenhum aluno encontrado."
+                ? "Nenhum cliente ou profissional encontrado."
                 : string.Empty;
             IsSearchDropdownOpen = PickedMember is null && query.Length >= 2;
             OnPropertyChanged(nameof(ShowNoResults));
@@ -709,6 +720,31 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
         }
     }
 
+    /// <summary>
+    /// O mesmo profissional pode voltar pelo id da equipe e pelo id do cliente com o mesmo CPF.
+    /// Na busca fica uma linha, a da equipe, para a facial gravar no cadastro certo.
+    /// </summary>
+    private static IReadOnlyList<Domain.Entities.Member> PreferStaffRecord(IReadOnlyList<Domain.Entities.Member> found)
+    {
+        var staffIds = found
+            .Where(m =>
+                string.Equals(m.PersonType, "employee", StringComparison.OrdinalIgnoreCase)
+                && m.EmployeeId is { } employeeId
+                && m.Id == employeeId)
+            .Select(m => m.EmployeeId!.Value)
+            .ToHashSet();
+
+        if (staffIds.Count == 0)
+            return found;
+
+        return found
+            .Where(m =>
+                m.EmployeeId is not { } employeeId
+                || m.Id == employeeId
+                || !staffIds.Contains(employeeId))
+            .ToList();
+    }
+
     private static string FormatCpf(string? cpf)
     {
         var digits = new string((cpf ?? string.Empty).Where(char.IsDigit).ToArray());
@@ -719,6 +755,13 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
 
     private static (string Label, bool Ok) DescribePlan(Domain.Entities.Member member)
     {
+        if (string.Equals(member.PersonType, "employee", StringComparison.OrdinalIgnoreCase))
+        {
+            return member.AccessAllowed
+                ? ("Profissional", true)
+                : ("Acesso de funcionário desabilitado", false);
+        }
+
         if (member.Status == MemberStatus.Blocked)
             return ("Bloqueado", false);
         if (member.AccessAllowed)
@@ -735,6 +778,7 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
         _session.Touch();
         _selectedMemberId = result.Id;
         SelectedMemberName = result.Name;
+        SelectedMemberCategory = result.CategoryLabel;
 
         switch (Intent)
         {
@@ -768,6 +812,8 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
 
         _selectedMemberId = memberId;
         SelectedMemberName = memberName ?? "Sem identificação";
+        if (memberId is null)
+            SelectedMemberCategory = string.Empty;
         ReleaseStatus = string.Empty;
         Screen = AccessUiState.ManualRelease;
         _states.TransitionTo(AccessUiState.ManualRelease, memberDisplayName: memberName, memberId: memberId);
@@ -790,7 +836,7 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
             // Até 3 tentativas: o frame do preview às vezes é o momento em que
             // o Haar ainda não “encaixa” (piscar / ângulo / foco).
             Exception? lastError = null;
-            for (var attempt = 0; attempt < 3; attempt++)
+            for (var attempt = 0; attempt < 2; attempt++)
             {
                 var jpeg = _lastEnrollJpeg ?? _webcam.GetJpegFrame();
                 if (jpeg is null || jpeg.Length < 100)
@@ -838,11 +884,16 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
                     ReleaseCamera();
 
                     var refreshed = await _members.GetByIdAsync(memberId).ConfigureAwait(true);
+                    var isEmployee = string.Equals(
+                        refreshed?.PersonType,
+                        "employee",
+                        StringComparison.OrdinalIgnoreCase)
+                        || SelectedMemberCategory.Length > 0;
                     var planOk = refreshed is not null && DescribePlan(refreshed).Ok;
 
-                    EnrollStatus = !planOk
-                        ? "Facial cadastrada.\nSem matrícula vigente — a catraca não libera."
-                        : "Facial cadastrada.\nAproxime-se do totem para entrar.";
+                    EnrollStatus = isEmployee || planOk
+                        ? "Facial cadastrada.\nAproxime-se do totem para entrar."
+                        : "Facial cadastrada.\nSem matrícula vigente — a catraca não libera.";
                     Screen = AccessUiState.EnrollmentCompleted;
                     _states.TransitionTo(
                         AccessUiState.EnrollmentCompleted,
@@ -859,10 +910,8 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
                     ex.Message.Contains("rosto", StringComparison.OrdinalIgnoreCase))
                 {
                     lastError = ex;
-                    EnrollStatus = attempt < 2
-                        ? "Ajustando captura… mantenha o rosto no centro."
-                        : ex.Message;
-                    await Task.Delay(220).ConfigureAwait(true);
+                    EnrollStatus = ex.Message;
+                    await Task.Delay(80).ConfigureAwait(true);
                 }
             }
 
@@ -944,6 +993,7 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
         SetPickedMember(null);
         _selectedMemberId = null;
         SelectedMemberName = string.Empty;
+        SelectedMemberCategory = string.Empty;
         Screen = AccessUiState.AttendantLogin;
 
         _mode.EnterAutomatic();

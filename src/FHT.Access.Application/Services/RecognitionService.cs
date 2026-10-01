@@ -55,11 +55,17 @@ public sealed class RecognitionService
     /// <summary>
     /// Fast local-only identify for the kiosk polling loop (no HTTP).
     /// </summary>
-    public Task<FaceMatchResult?> IdentifyOnlyAsync(
+    public async Task<FaceMatchResult?> IdentifyOnlyAsync(
         byte[] imageBgrOrJpeg,
         CancellationToken cancellationToken = default,
         FaceDetectionOptions? detection = null)
-        => _face.IdentifyAsync(imageBgrOrJpeg, cancellationToken, detection);
+    {
+        var match = await _face.IdentifyAsync(imageBgrOrJpeg, cancellationToken, detection)
+            .ConfigureAwait(false);
+        if (match is null)
+            _log?.Information($"Face miss: {_face.LastIdentifyNote ?? "sem detalhe"}");
+        return match;
+    }
 
     /// <summary>
     /// One-shot decision after a local match (refresh + online evaluate at most once).

@@ -44,7 +44,7 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
     public static readonly TimeSpan DefaultApproachHold = TimeSpan.FromMilliseconds(700);
     public static readonly TimeSpan DefaultSettleBeforeIdentify = TimeSpan.FromSeconds(1.4);
-    public static readonly TimeSpan IdentifyInterval = TimeSpan.FromMilliseconds(250);
+    public static readonly TimeSpan IdentifyInterval = TimeSpan.FromMilliseconds(120);
     public const int DefaultIdentifyAttempts = 16;
 
     public static readonly TimeSpan MinRecognizingDisplay = TimeSpan.FromSeconds(2.0);
@@ -81,7 +81,7 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
     private DateTime? _faceAbsentSinceUtc;
 
-    private static readonly TimeSpan FaceAbsenceToRearm = TimeSpan.FromMilliseconds(1200);
+    private static readonly TimeSpan FaceAbsenceToRearm = TimeSpan.FromMilliseconds(2000);
 
     private TaskCompletionSource? _resultHold;
 
@@ -357,7 +357,13 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
                 }
 
-
+                // Já liberou esta pessoa e ela ainda está na frente da câmera.
+                // Não abre o reconhecimento de novo — isso piscava a câmera e voltava ao descanso.
+                if (_latchedMemberId is not null)
+                {
+                    await Task.Delay(200, ct).ConfigureAwait(false);
+                    continue;
+                }
 
                 if (!_states.CanLaneTakeUi(_laneDirection))
                 {
@@ -445,7 +451,7 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
                                 bestMatch = next;
                             }
 
-                            if (consensusHits >= requiredConsensus)
+                            if (consensusHits >= requiredConsensus || next.Score >= 0.66)
                                 break;
                         }
                     }
@@ -453,8 +459,8 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
                     await Task.Delay(IdentifyInterval, ct).ConfigureAwait(false);
                 }
 
-                // Sem o mesmo aluno em 2 quadros, não libera e não mostra nome.
-                if (consensusHits < requiredConsensus)
+                // Um quadro muito parecido basta. Abaixo disso, exige o mesmo aluno duas vezes.
+                if (consensusHits < requiredConsensus && (bestMatch is null || bestMatch.Score < 0.66))
                     bestMatch = null;
 
                 if (bestMatch is not null && bestMatch.MemberId == _latchedMemberId)
@@ -633,6 +639,10 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
                     if (passageMissed && _profile.ImmediateRetryAfterPassageFailure)
                     {
                         await Task.Delay(_profile.PassageFailureDisplay, ct).ConfigureAwait(false);
+                        // A pessoa não girou o braço. Solta o reconhecimento para a próxima
+                        // aproximação — sem isso a tela de descanso ficava presa até ela sumir da câmera.
+                        _latchedMemberId = null;
+                        _faceAbsentSinceUtc = null;
                         _sessions.AllowImmediateRetry();
                     }
                     else
@@ -694,14 +704,32 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
 
 
+    private static bool IsEmployee(AccessDecision decision) =>
+        string.Equals(decision.OperationalStatus, "employee", StringComparison.OrdinalIgnoreCase);
+
     private string BuildReleaseMessage(AccessDecision decision)
     {
         if (decision.Kind == AccessDecisionKind.AllowTolerance)
             return $"Olá, {decision.MemberName}!\n\n{decision.PublicMessage}";
 
-        return _laneDirection == AccessDirection.Exit
-            ? $"Olá, {decision.MemberName}!\n\nPode passar na saída."
-            : $"Olá, {decision.MemberName}!\n\nPode passar na catraca.";
+        if (_laneDirection == AccessDirection.Entry)
+            return WelcomeEntry(decision.MemberName);
+
+        if (IsEmployee(decision))
+        {
+            var name = string.IsNullOrWhiteSpace(decision.MemberName) ? "Profissional" : decision.MemberName;
+            return $"Funcionário / Profissional\n{name}\n\nPode passar na saída.";
+        }
+
+        return $"Olá, {decision.MemberName}!\n\nPode passar na saída.";
+    }
+
+    private static string WelcomeEntry(string? name)
+    {
+        var who = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+        return who is null
+            ? "Seja bem-vindo, entrada liberada!"
+            : $"Olá, {who}!\nSeja bem-vindo, entrada liberada!";
     }
 
     private string BuildSuccessMessage(AccessDecision decision)
@@ -712,7 +740,13 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
             return $"Olá, {decision.MemberName}!\n\n{decision.PublicMessage}";
 
-
+        if (IsEmployee(decision))
+        {
+            var name = string.IsNullOrWhiteSpace(decision.MemberName) ? "Profissional" : decision.MemberName;
+            return _laneDirection == AccessDirection.Exit
+                ? $"Funcionário / Profissional\n{name}\n\nSaída registrada."
+                : $"Funcionário / Profissional\n{name}\n\nEntrada registrada.";
+        }
 
         return _laneDirection == AccessDirection.Exit
             ? $"Olá, {decision.MemberName}!\n\nSaída registrada.\nAté breve!"

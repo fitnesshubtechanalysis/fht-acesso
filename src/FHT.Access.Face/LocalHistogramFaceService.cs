@@ -29,11 +29,13 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
     private const int CellBins = 16;
     private const int SpatialLen = Grid * Grid * CellBins;
     private const int SfaceLen = 128;
-    // Floors altos: catraca liberava pessoa errada com 0.42/0.08 (oscilação 1:N).
-    private const float SfaceDefaultThreshold = 0.55f;
+    // Acima do falso positivo visto na catraca (0.42). 0.55 rejeitava a própria pessoa.
+    private const float SfaceDefaultThreshold = 0.50f;
     private const float SpatialDefaultThreshold = 0.72f;
     /// <summary>Exige diferença vs 2º lugar — evita liberar desconhecido como o aluno mais parecido.</summary>
-    private const float MinScoreMargin = 0.12f;
+    private const float MinScoreMargin = 0.08f;
+    /// <summary>Match forte: a mesma face em dois cadastros não pode anular o reconhecimento.</summary>
+    private const float StrongMatchScore = 0.66f;
     private const int DetectMaxWidth = 640;
 
     private static readonly byte[] SfaceMagic = "SF01"u8.ToArray();
@@ -69,6 +71,8 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
     }
 
     public string ModelVersion => _useSface ? SfaceModelVersion : SpatialModelVersion;
+
+    public string? LastIdentifyNote { get; private set; }
 
     public static bool CanHydrate(string? modelVersion)
         => !string.IsNullOrWhiteSpace(modelVersion)
@@ -147,7 +151,10 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
 
         var probe = BuildStoredFace(imageBgrOrJpeg, enroll: false, detection);
         if (probe.Sface.Count == 0 && probe.Spatial.Count == 0 && probe.Hists256.Count == 0)
+        {
+            LastIdentifyNote = "nenhum rosto no quadro";
             return Task.FromResult<FaceMatchResult?>(null);
+        }
 
         var match = FindBestMatch(probe, excludeMemberId: null);
         return Task.FromResult(match);
@@ -186,23 +193,32 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
             }
         }
 
-        var configured = _threshold > 0.7
-            ? (bestSface ? SfaceDefaultThreshold : SpatialDefaultThreshold)
-            : _threshold;
-        var cutoff = Math.Max(
-            configured,
-            bestSface ? SfaceDefaultThreshold : SpatialDefaultThreshold);
+        var floor = bestSface ? SfaceDefaultThreshold : SpatialDefaultThreshold;
+        var configured = _threshold is > 0.46 and <= 0.70 ? _threshold : floor;
+        var cutoff = Math.Max(configured, floor);
 
         if (bestId is null || bestScore < cutoff)
+        {
+            LastIdentifyNote = $"abaixo do corte score={bestScore:F3} segundo={secondBest:F3} corte={cutoff:F2}";
             return null;
+        }
 
         // Com SFace carregado, histograma/espacial não abre a catraca nem escolhe um nome.
         if (_useSface && !bestSface)
+        {
+            LastIdentifyNote = "SFace não confirmou o rosto";
             return null;
+        }
 
-        if (bestScore - secondBest < MinScoreMargin)
+        var margin = bestScore - secondBest;
+        if (margin < MinScoreMargin && bestScore < StrongMatchScore)
+        {
+            LastIdentifyNote =
+                $"ambíguo score={bestScore:F3} segundo={secondBest:F3} margem={margin:F3}";
             return null;
+        }
 
+        LastIdentifyNote = $"ok score={bestScore:F3}";
         return new FaceMatchResult(bestId.Value, bestScore);
     }
 
@@ -324,10 +340,9 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
             {
                 using var work = Downscale(variant, detect.DetectMaxWidth);
                 using var enhanced = EnhanceLighting(work);
-                // Identify: só Haar estrito (centro/área). Loose só no enroll —
-                // crop de fundo gerava oscilação (libera outra pessoa).
-                var face = DetectLargestFace(enhanced, detect)
-                           ?? (enroll ? DetectLargestFaceLoose(enhanced, detect) : null);
+                // O mesmo enquadramento do cadastro. O filtro estrito sozinho
+                // gravava a foto e, na catraca, não achava o rosto.
+                var face = DetectForMatch(enhanced, detect, enroll);
                 Mat region;
                 if (face is { } rect)
                 {
@@ -386,27 +401,15 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         return stored;
     }
 
+    /// <summary>
+    /// Só o quadro da câmera, já na orientação do preview.
+    /// Girar 90/180 a cada captura e a cada reconhecimento deixava o totem lento
+    /// e às vezes casava um recorte errado em vez do rosto cadastrado.
+    /// </summary>
     private static List<Mat> BuildVariants(Mat src, bool enroll)
     {
-        var list = new List<Mat> { src };
-        void AddRotate(RotateFlags flag)
-        {
-            var r = new Mat();
-            Cv2.Rotate(src, r, flag);
-            list.Add(r);
-        }
-
-        var mirrored = new Mat();
-        Cv2.Flip(src, mirrored, FlipMode.Y);
-        list.Add(mirrored);
-
-        AddRotate(RotateFlags.Rotate90Clockwise);
-        AddRotate(RotateFlags.Rotate90Counterclockwise);
-
-        if (enroll)
-            AddRotate(RotateFlags.Rotate180);
-
-        return list;
+        _ = enroll;
+        return [src];
     }
 
     private List<float[]> EmbedCrop(Mat bgrCrop, bool enroll)
@@ -436,6 +439,39 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         }
 
         return found;
+    }
+
+    /// <summary>
+    /// Cadastro e reconhecimento usam o mesmo rosto.
+    /// Se o filtro de centro falhar, aceita o maior rosto perto da câmera
+    /// e ignora um vulto pequeno no fundo.
+    /// </summary>
+    private Rect? DetectForMatch(Mat bgr, FaceDetectionOptions detect, bool enroll)
+    {
+        var strict = DetectLargestFace(bgr, detect);
+        if (strict is not null)
+            return strict;
+
+        if (!enroll && detect.MinNeighbors >= 4)
+            return null;
+
+        var loose = DetectLargestFaceLoose(bgr, detect);
+        if (loose is not { } face)
+            return null;
+
+        var frameArea = Math.Max(1, bgr.Width * bgr.Height);
+        var areaFrac = face.Width * face.Height / (double)frameArea;
+        if (areaFrac < 0.012)
+            return null;
+
+        var cx = face.X + face.Width / 2.0;
+        var cy = face.Y + face.Height / 2.0;
+        if (cx < bgr.Width * 0.06 || cx > bgr.Width * 0.94)
+            return null;
+        if (cy < bgr.Height * 0.04 || cy > bgr.Height * 0.96)
+            return null;
+
+        return face;
     }
 
     private Rect? DetectLargestFace(Mat bgr, FaceDetectionOptions detect)

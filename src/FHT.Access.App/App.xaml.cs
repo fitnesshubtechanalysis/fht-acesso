@@ -399,14 +399,18 @@ public partial class App : System.Windows.Application
     }
 
     /// <summary>
-    /// Abre a tela de descanso quando há um rosto perto.
-    /// Movimento sozinho (corredor, gente longe) não abre e não libera.
+    /// Abre o reconhecimento quando alguém se mexe na frente da câmera
+    /// ou quando já há um rosto perto, mesmo parado.
+    /// A catraca só libera depois, se o rosto for identificado.
     /// </summary>
     private static bool IsApproachSignal(
         WebcamService cam,
         LocalHistogramFaceService? face,
         FaceDetectionOptions presence)
     {
+        if (cam.HasMotion())
+            return true;
+
         var jpeg = cam.GetJpegFrame();
         if (jpeg is null || jpeg.Length < 100 || face is null)
             return false;

@@ -33,10 +33,10 @@ public sealed record FaceDetectionOptions(
     /// sem inventar crop wide — só Haar.
     /// </summary>
     public static FaceDetectionOptions EntryIdentify { get; } = new(
-        DetectMaxWidth: 960,
+        DetectMaxWidth: 640,
         MinFaceSize: 28,
         ScaleFactor: 1.07,
-        MinNeighbors: 3,
+        MinNeighbors: 2,
         MinFaceAreaFraction: 0.018,
         CenterXMargin: 0.10,
         CenterYMargin: 0.08);
@@ -45,7 +45,7 @@ public sealed record FaceDetectionOptions(
     /// Cadastro no balcão: mais permissivo (rosto próximo, ângulo/iluminação variáveis).
     /// </summary>
     public static FaceDetectionOptions Enrollment { get; } = new(
-        DetectMaxWidth: 960,
+        DetectMaxWidth: 640,
         MinFaceSize: 28,
         ScaleFactor: 1.07,
         MinNeighbors: 2,
@@ -57,7 +57,7 @@ public sealed record FaceDetectionOptions(
     /// Saída: exige rosto bem próximo/central — ignora musculação/esteira ao fundo.
     /// </summary>
     public static FaceDetectionOptions ExitDistance { get; } = new(
-        DetectMaxWidth: 960,
+        DetectMaxWidth: 640,
         MinFaceSize: 72,
         ScaleFactor: 1.06,
         MinNeighbors: 4,

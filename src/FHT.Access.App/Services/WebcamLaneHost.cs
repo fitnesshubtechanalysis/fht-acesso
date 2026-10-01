@@ -39,7 +39,7 @@ public sealed class WebcamLaneHost : IDisposable
         Exit.Configure(exitW, exitH, exitPreviewFps, exitProcessFps);
         Exit.MaxProcessWidth = settings.ExitProcessMaxWidth > 0 ? settings.ExitProcessMaxWidth : 1920;
 
-        Entry.MotionRatioThreshold = 0.032;
+        Entry.MotionRatioThreshold = 0.018;
         Entry.MotionPixelThreshold = 28;
         Entry.MotionHold = TimeSpan.FromMilliseconds(900);
         Entry.MotionRoiWidthFraction = 0.62;

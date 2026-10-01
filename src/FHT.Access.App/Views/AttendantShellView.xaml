@@ -465,7 +465,7 @@
                                     <ColumnDefinition Width="20" />
                                 </Grid.ColumnDefinitions>
                                 <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE721;" FontSize="16" Foreground="White" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="1" Text="Buscar aluno" FontSize="15" FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="Buscar cliente ou profissional" FontSize="14" FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center" TextWrapping="Wrap" />
                                 <TextBlock Grid.Column="2" FontFamily="Segoe MDL2 Assets" Text="&#xE76C;" FontSize="12" Foreground="#A7F3D0" VerticalAlignment="Center" HorizontalAlignment="Right" />
                             </Grid>
                         </Button>
@@ -557,8 +557,8 @@
                                        Height="36" Stretch="Uniform" HorizontalAlignment="Left"
                                        RenderOptions.BitmapScalingMode="HighQuality" />
                                 <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center">
-                                    <TextBlock Text="Buscar aluno" FontSize="16" FontWeight="SemiBold" Foreground="White" TextAlignment="Right" />
-                                    <TextBlock Text="Encontre alunos por nome, CPF ou matrícula" FontSize="11" Foreground="#9A9A9A" TextAlignment="Right" />
+                                    <TextBlock Text="Buscar cliente ou profissional" FontSize="14" FontWeight="SemiBold" Foreground="White" TextAlignment="Right" TextWrapping="Wrap" MaxWidth="230" />
+                                    <TextBlock Text="Nome, CPF ou matrícula" FontSize="11" Foreground="#9A9A9A" TextAlignment="Right" />
                                 </StackPanel>
                             </Grid>
 
@@ -639,6 +639,11 @@
                                             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                                 <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE77B;" FontSize="13" Foreground="#22C55E" VerticalAlignment="Center" Margin="0,0,8,0" />
                                                 <TextBlock Text="{Binding PreviewName}" FontSize="15" FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                                <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE716;" FontSize="12" Foreground="#9A9A9A" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                <TextBlock Text="Tipo:" FontSize="13" Foreground="White" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                                <TextBlock Text="{Binding PreviewCategory}" FontSize="13" Foreground="#22C55E" VerticalAlignment="Center" />
                                             </StackPanel>
                                             <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                                 <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE8FA;" FontSize="12" Foreground="#9A9A9A" VerticalAlignment="Center" Margin="0,0,8,0" />
@@ -731,7 +736,7 @@
                                         <TextBlock Text="i" FontSize="11" FontWeight="Bold" Foreground="#22C55E"
                                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
                                     </Grid>
-                                    <TextBlock Text="Digite para filtrar e escolha o aluno no menu. As informações serão preenchidas automaticamente."
+                                    <TextBlock Text="Digite para filtrar e escolha o cliente ou profissional no menu. As informações serão preenchidas automaticamente."
                                                FontSize="11.5" Foreground="#9A9A9A" TextWrapping="Wrap" />
                                 </StackPanel>
                             </StackPanel>
@@ -771,7 +776,7 @@
                                                         </Grid.ColumnDefinitions>
                                                         <StackPanel>
                                                             <TextBlock Text="{Binding Name}" FontSize="13.5" FontWeight="SemiBold" Foreground="White" TextTrimming="CharacterEllipsis" />
-                                                            <TextBlock Text="{Binding FaceLabel}" FontSize="11" Foreground="#A0A0A0" Margin="0,2,0,0" />
+                                                            <TextBlock Text="{Binding TypeAndFaceLabel}" FontSize="11" Foreground="#A0A0A0" Margin="0,2,0,0" />
                                                         </StackPanel>
                                                         <TextBlock Grid.Column="1" FontFamily="Segoe MDL2 Assets" Text="&#xE76C;" FontSize="11" Foreground="#86EFAC" VerticalAlignment="Center" Margin="8,0,0,0" />
                                                     </Grid>
@@ -845,6 +850,19 @@
                                         <Ellipse Width="5" Height="5" Fill="#22C55E" Margin="8,0" VerticalAlignment="Center" />
                                         <TextBlock Text="{Binding SelectedMemberName}" FontSize="14" Foreground="#9A9A9A" VerticalAlignment="Center" />
                                     </StackPanel>
+                                    <TextBlock Text="{Binding SelectedMemberCategory}" FontSize="12" FontWeight="SemiBold"
+                                               Foreground="#00D17E" TextAlignment="Right" Margin="0,2,0,0">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding SelectedMemberCategory}" Value="">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
                                     <TextBlock Text="Posicione o rosto no centro" FontSize="11" Foreground="#9A9A9A" TextAlignment="Right" />
                                 </StackPanel>
                             </Grid>

@@ -7,7 +7,7 @@ namespace FHT.Access.Tests;
 public class FakeTurnstileTests
 {
     [Fact]
-    public async Task Connect_ReleaseEntry_RaisesPassageDetected_Within2Seconds()
+    public async Task ReleaseEntry_DoesNotInventPassage_UntilArmTurns()
     {
         await using var fake = new FakeTurnstile();
         var tcs = new TaskCompletionSource<PassageOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -17,9 +17,12 @@ public class FakeTurnstileTests
         Assert.Equal(TurnstileConnectionState.Connected, fake.State);
 
         await fake.ReleaseEntryAsync();
+        Assert.Equal(TurnstileConnectionState.WaitingPassage, fake.State);
 
-        var completed = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(2)));
-        Assert.Same(tcs.Task, completed);
+        var completed = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromMilliseconds(900)));
+        Assert.NotSame(tcs.Task, completed);
+
+        fake.NotifyArmTurn();
         Assert.Equal(PassageOutcome.PassageDetected, await tcs.Task);
         Assert.Equal(TurnstileConnectionState.Connected, fake.State);
     }

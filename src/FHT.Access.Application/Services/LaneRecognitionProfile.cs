@@ -14,8 +14,11 @@ public sealed class LaneRecognitionProfile
 
     public static LaneRecognitionProfile Entry { get; } = new()
     {
-        ApproachHold = TimeSpan.FromMilliseconds(400),
+        ApproachHold = TimeSpan.FromMilliseconds(250),
+        SettleBeforeIdentify = TimeSpan.FromMilliseconds(200),
+        IdentifyAttempts = 8,
         FaceDetection = FaceDetectionOptions.EntryIdentify,
+        PassageFailureDisplay = TimeSpan.FromSeconds(2.5),
     };
 
     public static LaneRecognitionProfile Exit { get; } = new()

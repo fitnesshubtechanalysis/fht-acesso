@@ -172,6 +172,7 @@ public sealed class ToletusLiteNetTurnstile : ITurnstile
         ct.ThrowIfCancellationRequested();
         var board = RequireConnectedBoard();
         Log($"ReleaseEntry serial={board.Serial} ip={board.Ip} top={top}");
+        MarkReleaseCommand();
         SetState(TurnstileConnectionState.WaitingPassage);
         board.ReleaseEntry(top, bottom);
         return Task.CompletedTask;
@@ -182,6 +183,7 @@ public sealed class ToletusLiteNetTurnstile : ITurnstile
         ct.ThrowIfCancellationRequested();
         var board = RequireConnectedBoard();
         Log($"ReleaseExit serial={board.Serial} ip={board.Ip} top={top}");
+        MarkReleaseCommand();
         SetState(TurnstileConnectionState.WaitingPassage);
         board.ReleaseExit(top, bottom);
         return Task.CompletedTask;
@@ -275,8 +277,30 @@ public sealed class ToletusLiteNetTurnstile : ITurnstile
     private static string Summarize(IEnumerable<LiteNet3BoardBase> boards)
         => string.Join("; ", boards.Select(b => $"ip={b.Ip} serial={b.Serial} id={b.Id}"));
 
+    private DateTime _releaseCommandUtc = DateTime.MinValue;
+
+    /// <summary>
+    /// A placa pode ecoar Passage no mesmo instante do comando de liberação.
+    /// Giro de verdade leva o braço a mexer e traz contador In/Out, ou chega depois dessa janela.
+    /// </summary>
+    private static readonly TimeSpan ReleaseEchoWindow = TimeSpan.FromMilliseconds(500);
+
+    private void MarkReleaseCommand() => _releaseCommandUtc = DateTime.UtcNow;
+
     private void OnBoardReleaseResponse(LiteNet3BoardBase board, ReleaseBase response)
     {
+        if (response is PassageResponse passage)
+        {
+            var age = DateTime.UtcNow - _releaseCommandUtc;
+            var turned = (passage.In ?? 0) + (passage.Out ?? 0);
+            Log($"Passage In={passage.In?.ToString() ?? "-"} Out={passage.Out?.ToString() ?? "-"} ageMs={age.TotalMilliseconds:0}");
+            if (age < ReleaseEchoWindow && turned <= 0)
+            {
+                Log("Ignored passage echo before the arm turned");
+                return;
+            }
+        }
+
         var outcome = response switch
         {
             PassageResponse => PassageOutcome.PassageDetected,
