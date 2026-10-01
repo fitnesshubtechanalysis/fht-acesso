@@ -11,7 +11,7 @@ public sealed class MemberRepository : IMemberRepository
         Id, Name, Status, AccessAllowed, ValidUntil, UpdatedAt, PhotoUrl, Cpf,
         ReasonCode, OperationalStatus, FinancialStatus, AccessStatus, AccessDecisionKind,
         ToleranceUsed, ToleranceOccurrenceId, OccurrenceCauseCode, RelationshipActionId,
-        BypassPresence
+        BypassPresence, PersonType, EmployeeId
         """;
 
     private readonly SqliteConnectionFactory _factory;
@@ -61,11 +61,11 @@ public sealed class MemberRepository : IMemberRepository
                     Id, Name, Status, AccessAllowed, ValidUntil, UpdatedAt, PhotoUrl, Cpf, LastSyncAt,
                     ReasonCode, OperationalStatus, FinancialStatus, AccessStatus, AccessDecisionKind,
                     ToleranceUsed, ToleranceOccurrenceId, OccurrenceCauseCode, RelationshipActionId,
-                    BypassPresence)
+                    BypassPresence, PersonType, EmployeeId)
                 VALUES (
                     $id, $name, $status, $allowed, $validUntil, $updatedAt, $photoUrl, $cpf, $lastSync,
                     $reason, $operational, $financial, $access, $decisionKind,
-                    $tolUsed, $occId, $occCause, $relId, $bypass)
+                    $tolUsed, $occId, $occCause, $relId, $bypass, $personType, $employeeId)
                 ON CONFLICT(Id) DO UPDATE SET
                     Name = excluded.Name,
                     Status = excluded.Status,
@@ -84,7 +84,9 @@ public sealed class MemberRepository : IMemberRepository
                     ToleranceOccurrenceId = excluded.ToleranceOccurrenceId,
                     OccurrenceCauseCode = excluded.OccurrenceCauseCode,
                     RelationshipActionId = excluded.RelationshipActionId,
-                    BypassPresence = excluded.BypassPresence;
+                    BypassPresence = excluded.BypassPresence,
+                    PersonType = excluded.PersonType,
+                    EmployeeId = excluded.EmployeeId;
                 """;
             BindMember(command, member);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -246,6 +248,10 @@ public sealed class MemberRepository : IMemberRepository
             "$relId",
             member.RelationshipActionId is null ? DBNull.Value : member.RelationshipActionId.Value.ToString("D"));
         command.Parameters.AddWithValue("$bypass", member.BypassPresence ? 1 : 0);
+        command.Parameters.AddWithValue("$personType", string.IsNullOrWhiteSpace(member.PersonType) ? "customer" : member.PersonType);
+        command.Parameters.AddWithValue(
+            "$employeeId",
+            member.EmployeeId is null ? DBNull.Value : member.EmployeeId.Value.ToString("D"));
     }
 
     private static Member MapMember(SqliteDataReader reader)
@@ -274,6 +280,8 @@ public sealed class MemberRepository : IMemberRepository
         if (reader.FieldCount > 15 && !reader.IsDBNull(15)) m.OccurrenceCauseCode = reader.GetString(15);
         if (reader.FieldCount > 16 && !reader.IsDBNull(16)) m.RelationshipActionId = Guid.Parse(reader.GetString(16));
         if (reader.FieldCount > 17 && !reader.IsDBNull(17)) m.BypassPresence = reader.GetInt64(17) != 0;
+        if (reader.FieldCount > 18 && !reader.IsDBNull(18)) m.PersonType = reader.GetString(18);
+        if (reader.FieldCount > 19 && !reader.IsDBNull(19)) m.EmployeeId = Guid.Parse(reader.GetString(19));
         return m;
     }
 

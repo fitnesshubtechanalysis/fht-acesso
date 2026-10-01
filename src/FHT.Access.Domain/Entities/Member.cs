@@ -25,4 +25,9 @@ public sealed class Member
 
     /// <summary>Professor/colaborador — ignora trava de presença (entrada/saída livres).</summary>
     public bool BypassPresence { get; set; }
+
+    /// <summary>customer ou employee. A categoria vem do vínculo, nunca de um botão no totem.</summary>
+    public string PersonType { get; set; } = "customer";
+
+    public Guid? EmployeeId { get; set; }
 }

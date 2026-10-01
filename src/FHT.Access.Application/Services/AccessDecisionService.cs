@@ -29,6 +29,9 @@ public sealed class AccessDecisionService
             };
         }
 
+        if (IsEmployee(member))
+            return DecideEmployee(member, score);
+
         if (!string.IsNullOrWhiteSpace(member.AccessDecisionKind)
             && Enum.TryParse<AccessDecisionKind>(member.AccessDecisionKind, ignoreCase: true, out var synced))
         {
@@ -36,6 +39,39 @@ public sealed class AccessDecisionService
         }
 
         return _evaluator.Evaluate(member, score);
+    }
+
+    private static bool IsEmployee(Member member) =>
+        string.Equals(member.PersonType, "employee", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Funcionário ativo e habilitado passa direto. Sem plano, contrato ou cobrança.
+    /// </summary>
+    private static AccessDecision DecideEmployee(Member member, double? score)
+    {
+        var allowed = member.AccessAllowed;
+        var name = string.IsNullOrWhiteSpace(member.Name) ? "Profissional" : member.Name.Trim();
+        return new AccessDecision
+        {
+            Allowed = allowed,
+            Kind = allowed ? AccessDecisionKind.AllowRegular : AccessDecisionKind.DenyAdministrative,
+            MemberId = member.Id,
+            MemberName = member.Name,
+            Score = score,
+            ReasonCode = allowed ? null : member.ReasonCode ?? "employee_access_disabled",
+            OperationalStatus = "employee",
+            FinancialStatus = "not_applicable",
+            AccessStatus = allowed ? "allowed" : "denied",
+            AllowAutomaticRelease = allowed,
+            ConsumeToleranceOnPassage = false,
+            RequiresManualRelease = false,
+            PublicMessage = allowed
+                ? $"Funcionário / Profissional\n{name}\nAcesso liberado"
+                : "Acesso de funcionário desabilitado. Procure a recepção.",
+            PrivateMessage = allowed
+                ? "Liberação de funcionário — sem verificação de plano."
+                : "Funcionário inativo ou com acesso desabilitado."
+        };
     }
 
     public AccessDecision DecideManual(Member? member, string reason, double? score = null)

@@ -187,6 +187,8 @@ public sealed class DatabaseInitializer
             ("OccurrenceCauseCode", "TEXT"),
             ("RelationshipActionId", "TEXT"),
             ("BypassPresence", "INTEGER"),
+            ("PersonType", "TEXT"),
+            ("EmployeeId", "TEXT"),
         })
         {
             await EnsureColumnAsync(connection, "Members", col, type, cancellationToken).ConfigureAwait(false);

@@ -49,6 +49,34 @@ public class AccessDecisionServiceTests
         Assert.Equal(0.97, d.Score);
     }
 
+    [Fact]
+    public void Decide_Employee_SkipsPlanAndShowsStaffMessage()
+    {
+        var allowed = RegularMember();
+        allowed.Name = "Ana Costa";
+        allowed.PersonType = "employee";
+        allowed.AccessAllowed = true;
+        allowed.FinancialStatus = "overdue";
+        allowed.OperationalStatus = "no_enrollment";
+
+        var released = _sut.Decide(allowed);
+        Assert.True(released.Allowed);
+        Assert.Equal(AccessDecisionKind.AllowRegular, released.Kind);
+        Assert.Contains("Funcionário / Profissional", released.PublicMessage);
+        Assert.Contains("Ana Costa", released.PublicMessage);
+        Assert.Contains("Acesso liberado", released.PublicMessage);
+        Assert.DoesNotContain("plano", released.PublicMessage, StringComparison.OrdinalIgnoreCase);
+
+        var blocked = RegularMember();
+        blocked.PersonType = "employee";
+        blocked.AccessAllowed = false;
+        blocked.ReasonCode = "employee_inactive";
+        var denied = _sut.Decide(blocked);
+        Assert.False(denied.Allowed);
+        Assert.Equal("Acesso de funcionário desabilitado. Procure a recepção.", denied.PublicMessage);
+        Assert.Equal("employee_inactive", denied.ReasonCode);
+    }
+
     private static Member RegularMember() => new()
     {
         Id = Guid.NewGuid(),

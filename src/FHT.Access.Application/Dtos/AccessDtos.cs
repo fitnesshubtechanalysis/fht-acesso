@@ -24,7 +24,9 @@ public sealed record MemberDto(
     Guid? ToleranceOccurrenceId = null,
     string? OccurrenceCauseCode = null,
     Guid? RelationshipActionId = null,
-    bool BypassPresence = false);
+    bool BypassPresence = false,
+    string PersonType = "customer",
+    Guid? EmployeeId = null);
 
 public sealed record AccessEvaluateResultDto(
     string Kind,
@@ -38,7 +40,9 @@ public sealed record AccessEvaluateResultDto(
     bool ConsumeToleranceOnPassage,
     bool RequiresManualRelease,
     Guid? OccurrenceId,
-    Guid? RelationshipActionId);
+    Guid? RelationshipActionId,
+    string? PersonType = null,
+    Guid? EmployeeId = null);
 
 public sealed record AccessEventDto(
     Guid Id,

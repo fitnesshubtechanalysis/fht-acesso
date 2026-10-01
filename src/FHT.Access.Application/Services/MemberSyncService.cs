@@ -122,7 +122,9 @@ public sealed class MemberSyncService
         ToleranceOccurrenceId = dto.ToleranceOccurrenceId,
         OccurrenceCauseCode = dto.OccurrenceCauseCode,
         RelationshipActionId = dto.RelationshipActionId,
-        BypassPresence = dto.BypassPresence
+        BypassPresence = dto.BypassPresence,
+        PersonType = string.IsNullOrWhiteSpace(dto.PersonType) ? "customer" : dto.PersonType,
+        EmployeeId = dto.EmployeeId
     };
 
     private static MemberStatus ParseStatus(string status)

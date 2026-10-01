@@ -141,6 +141,15 @@ public sealed class RecognitionService
         member.ToleranceOccurrenceId = eval.OccurrenceId;
         member.RelationshipActionId = eval.RelationshipActionId;
         member.ReasonCode = eval.CauseCode;
+        if (!string.IsNullOrWhiteSpace(eval.PersonType))
+            member.PersonType = eval.PersonType;
+        if (eval.EmployeeId is { } employeeId)
+            member.EmployeeId = employeeId;
+        if (string.Equals(member.PersonType, "employee", StringComparison.OrdinalIgnoreCase))
+        {
+            member.AccessAllowed = eval.AllowAutomaticRelease;
+            member.BypassPresence = true;
+        }
         await _members.UpsertAsync(member, ct).ConfigureAwait(false);
     }
 
