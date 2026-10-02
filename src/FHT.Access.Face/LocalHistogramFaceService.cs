@@ -32,10 +32,8 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
     // Acima do falso positivo visto na catraca (0.42). 0.55 rejeitava a própria pessoa.
     private const float SfaceDefaultThreshold = 0.50f;
     private const float SpatialDefaultThreshold = 0.72f;
-    /// <summary>Exige diferença vs 2º lugar — dúvida não abre a catraca.</summary>
-    private const float MinScoreMargin = 0.10f;
-    /// <summary>Só um placar muito alto dispensa a margem. Abaixo disso, dois candidatos próximos é dúvida.</summary>
-    private const float StrongMatchScore = 0.80f;
+    /// <summary>Folga mínima contra o 2º nome. Sem isso o totem cumprimenta outra pessoa.</summary>
+    private const float MinScoreMargin = 0.14f;
     private const int DetectMaxWidth = 640;
 
     private static readonly byte[] SfaceMagic = "SF01"u8.ToArray();
@@ -211,9 +209,8 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         }
 
         var margin = bestScore - secondBest;
-        var doubtful = margin < MinScoreMargin && bestScore < StrongMatchScore;
-        // Cadastro: outro membro acima do corte é foto duplicada, mesmo com margem curta.
-        if (excludeMemberId is null && doubtful)
+        // Cadastro ainda acusa foto duplicada. Na catraca, margem curta não vira nome.
+        if (excludeMemberId is null && margin < MinScoreMargin)
         {
             LastIdentifyNote =
                 $"dúvida score={bestScore:F3} segundo={secondBest:F3} margem={margin:F3}";
@@ -734,13 +731,9 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         if (probe.Sface.Count > 0 && template.Sface.Count > 0)
         {
             usedSface = true;
-            foreach (var a in probe.Sface)
-            {
-                foreach (var b in template.Sface)
-                    best = Math.Max(best, Cosine(a, b));
-            }
-
-            return best;
+            // Só o primeiro vetor, o rosto sem espelho e sem giro.
+            // O máximo entre espelho e rotação escolhia o nome de outra pessoa.
+            return Cosine(probe.Sface[0], template.Sface[0]);
         }
 
         foreach (var a in probe.Spatial)

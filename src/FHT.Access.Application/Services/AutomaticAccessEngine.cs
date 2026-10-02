@@ -451,7 +451,7 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
                                 bestMatch = next;
                             }
 
-                            if (consensusHits >= requiredConsensus || next.Score >= 0.80)
+                            if (consensusHits >= requiredConsensus)
                                 break;
                         }
                     }
@@ -459,8 +459,8 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
                     await Task.Delay(IdentifyInterval, ct).ConfigureAwait(false);
                 }
 
-                // Dúvida não libera com um quadro só. 0,80 é o único atalho; o resto espera o mesmo aluno duas vezes.
-                if (consensusHits < requiredConsensus && (bestMatch is null || bestMatch.Score < 0.80))
+                // Um quadro só não escolhe nome. Os dois têm de ser a mesma pessoa.
+                if (consensusHits < requiredConsensus)
                     bestMatch = null;
 
                 if (bestMatch is not null && bestMatch.MemberId == _latchedMemberId)
