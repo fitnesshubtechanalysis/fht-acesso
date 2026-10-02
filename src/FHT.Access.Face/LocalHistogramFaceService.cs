@@ -32,10 +32,10 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
     // Acima do falso positivo visto na catraca (0.42). 0.55 rejeitava a própria pessoa.
     private const float SfaceDefaultThreshold = 0.50f;
     private const float SpatialDefaultThreshold = 0.72f;
-    /// <summary>Exige diferença vs 2º lugar — evita liberar desconhecido como o aluno mais parecido.</summary>
-    private const float MinScoreMargin = 0.08f;
-    /// <summary>Match forte: a mesma face em dois cadastros não pode anular o reconhecimento.</summary>
-    private const float StrongMatchScore = 0.66f;
+    /// <summary>Exige diferença vs 2º lugar — dúvida não abre a catraca.</summary>
+    private const float MinScoreMargin = 0.10f;
+    /// <summary>Só um placar muito alto dispensa a margem. Abaixo disso, dois candidatos próximos é dúvida.</summary>
+    private const float StrongMatchScore = 0.80f;
     private const int DetectMaxWidth = 640;
 
     private static readonly byte[] SfaceMagic = "SF01"u8.ToArray();
@@ -211,10 +211,12 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         }
 
         var margin = bestScore - secondBest;
-        if (margin < MinScoreMargin && bestScore < StrongMatchScore)
+        var doubtful = margin < MinScoreMargin && bestScore < StrongMatchScore;
+        // Cadastro: outro membro acima do corte é foto duplicada, mesmo com margem curta.
+        if (excludeMemberId is null && doubtful)
         {
             LastIdentifyNote =
-                $"ambíguo score={bestScore:F3} segundo={secondBest:F3} margem={margin:F3}";
+                $"dúvida score={bestScore:F3} segundo={secondBest:F3} margem={margin:F3}";
             return null;
         }
 

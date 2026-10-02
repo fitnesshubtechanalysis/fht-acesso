@@ -451,7 +451,7 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
                                 bestMatch = next;
                             }
 
-                            if (consensusHits >= requiredConsensus || next.Score >= 0.66)
+                            if (consensusHits >= requiredConsensus || next.Score >= 0.80)
                                 break;
                         }
                     }
@@ -459,8 +459,8 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
                     await Task.Delay(IdentifyInterval, ct).ConfigureAwait(false);
                 }
 
-                // Um quadro muito parecido basta. Abaixo disso, exige o mesmo aluno duas vezes.
-                if (consensusHits < requiredConsensus && (bestMatch is null || bestMatch.Score < 0.66))
+                // Dúvida não libera com um quadro só. 0,80 é o único atalho; o resto espera o mesmo aluno duas vezes.
+                if (consensusHits < requiredConsensus && (bestMatch is null || bestMatch.Score < 0.80))
                     bestMatch = null;
 
                 if (bestMatch is not null && bestMatch.MemberId == _latchedMemberId)
