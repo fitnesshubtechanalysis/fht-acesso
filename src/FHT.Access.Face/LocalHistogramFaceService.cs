@@ -123,9 +123,9 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         if (stored.Sface.Count == 0 && stored.Spatial.Count == 0)
             throw new InvalidOperationException("Nenhum rosto detectado. Olhe para a câmera e tente de novo.");
 
-        var conflict = FindBestMatch(stored, excludeMemberId: memberId);
-        if (conflict is not null)
-            throw new FaceEnrollmentConflictException(conflict.MemberId, conflict.Score);
+        var conflicts = FindEnrollmentConflicts(stored, memberId);
+        if (conflicts.Count > 0)
+            throw new FaceEnrollmentConflictException(conflicts);
 
         var blob = SerializeStored(stored);
 
@@ -219,6 +219,42 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
 
         LastIdentifyNote = $"ok score={bestScore:F3}";
         return new FaceMatchResult(bestId.Value, bestScore);
+    }
+
+    /// <summary>
+    /// Todo cadastro acima do corte, não só o primeiro nome. Dois enquadramentos
+    /// não podem apontar pessoas diferentes sem a recepção ver a lista.
+    /// </summary>
+    private List<(Guid MemberId, double Score)> FindEnrollmentConflicts(StoredFace probe, Guid excludeMemberId)
+    {
+        var ranked = new List<(Guid MemberId, double Score, bool UsedSface)>();
+        lock (_sync)
+        {
+            foreach (var (memberId, template) in _templates)
+            {
+                if (memberId == excludeMemberId)
+                    continue;
+
+                var score = Score(probe, template, out var usedSface);
+                ranked.Add((memberId, score, usedSface));
+            }
+        }
+
+        ranked.Sort((a, b) => b.Score.CompareTo(a.Score));
+        var conflicts = new List<(Guid MemberId, double Score)>();
+        foreach (var hit in ranked)
+        {
+            var floor = hit.UsedSface ? SfaceDefaultThreshold : SpatialDefaultThreshold;
+            var configured = _threshold is > 0.46 and <= 0.70 ? _threshold : floor;
+            var cutoff = Math.Max(configured, floor);
+            if (_useSface && !hit.UsedSface)
+                continue;
+            if (hit.Score < cutoff)
+                continue;
+            conflicts.Add((hit.MemberId, hit.Score));
+        }
+
+        return conflicts;
     }
 
     public Task RemoveAsync(Guid memberId, CancellationToken ct = default)
@@ -460,7 +496,10 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
 
         var frameArea = Math.Max(1, bgr.Width * bgr.Height);
         var areaFrac = face.Width * face.Height / (double)frameArea;
-        if (areaFrac < 0.012)
+        var minFrac = enroll
+            ? Math.Min(detect.MinFaceAreaFraction, 0.012)
+            : detect.MinFaceAreaFraction;
+        if (areaFrac < minFrac)
             return null;
 
         var cx = face.X + face.Width / 2.0;
@@ -499,7 +538,7 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
             return null;
 
         var frameArea = Math.Max(1, bgr.Width * bgr.Height);
-        var minArea = Math.Max(1.0, detect.MinFaceAreaFraction) * frameArea;
+        var minArea = Math.Clamp(detect.MinFaceAreaFraction, 0, 0.5) * frameArea;
         var mx = Math.Clamp(detect.CenterXMargin, 0, 0.45);
         var my = Math.Clamp(detect.CenterYMargin, 0, 0.45);
         var x0 = bgr.Width * mx;

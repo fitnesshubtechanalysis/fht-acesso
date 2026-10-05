@@ -6,14 +6,24 @@ namespace FHT.Access.Domain.Abstractions;
 public sealed class FaceEnrollmentConflictException : InvalidOperationException
 {
     public Guid ConflictingMemberId { get; }
+    public IReadOnlyList<Guid> ConflictingMemberIds { get; }
     public double Score { get; }
 
     public FaceEnrollmentConflictException(Guid conflictingMemberId, double score)
-        : base(
-            $"Este rosto já está cadastrado em outro aluno (score={score:F2}). " +
-            "Remova a facial do outro cadastro ou escolha o aluno correto.")
+        : this([(conflictingMemberId, score)])
     {
-        ConflictingMemberId = conflictingMemberId;
-        Score = score;
+    }
+
+    public FaceEnrollmentConflictException(IReadOnlyList<(Guid MemberId, double Score)> conflicts)
+        : base(conflicts.Count <= 1
+            ? "Este rosto já está cadastrado em outro aluno. Remova a facial desse cadastro antes de continuar."
+            : $"Este rosto parece com {conflicts.Count} cadastros. Remova a facial deles antes de continuar.")
+    {
+        if (conflicts.Count == 0)
+            throw new ArgumentException("Informe ao menos um cadastro em conflito.", nameof(conflicts));
+
+        ConflictingMemberIds = conflicts.Select(c => c.MemberId).Distinct().ToArray();
+        ConflictingMemberId = ConflictingMemberIds[0];
+        Score = conflicts[0].Score;
     }
 }

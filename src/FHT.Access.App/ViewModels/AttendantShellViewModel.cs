@@ -920,11 +920,21 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
         }
         catch (FaceEnrollmentConflictException conflict)
         {
-            var other = await _members.GetByIdAsync(conflict.ConflictingMemberId).ConfigureAwait(true);
-            var otherName = other?.Name?.Trim();
-            EnrollStatus = string.IsNullOrWhiteSpace(otherName)
+            var names = new List<string>();
+            foreach (var otherId in conflict.ConflictingMemberIds)
+            {
+                var other = await _members.GetByIdAsync(otherId).ConfigureAwait(true);
+                var otherName = other?.Name?.Trim();
+                if (!string.IsNullOrWhiteSpace(otherName))
+                    names.Add(otherName);
+            }
+
+            EnrollStatus = names.Count == 0
                 ? "Este rosto já está cadastrado em outro aluno.\nRemova a facial do outro cadastro antes de continuar."
-                : $"Este rosto já está cadastrado em:\n{otherName}\n\nRemova a facial dele antes de cadastrar aqui.";
+                : names.Count == 1
+                    ? $"Este rosto já está cadastrado em:\n{names[0]}\n\nRemova a facial desse cadastro antes de continuar."
+                    : "Este rosto já está cadastrado em:\n" + string.Join("\n", names)
+                      + "\n\nRemova a facial desses cadastros antes de continuar.";
             _logger.Warning(
                 $"Enrollment conflict: target={memberId} already matches {conflict.ConflictingMemberId} score={conflict.Score:F2}.");
         }

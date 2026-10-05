@@ -379,6 +379,8 @@ public sealed class WebcamService : IDisposable
             capture.Set(VideoCaptureProperties.Fps, fps);
         try { capture.Set(VideoCaptureProperties.ConvertRgb, 1); } catch { /* driver-dependent */ }
         try { capture.Set(VideoCaptureProperties.AutoExposure, 0.75); } catch { /* driver-dependent */ }
+        // 0 = sem zoom digital na maioria das UVC. Zoom alto corta o rosto e o totem não reconhece.
+        try { capture.Set(VideoCaptureProperties.Zoom, 0); } catch { /* driver-dependent */ }
     }
 
     private static VideoCapture? TryOpenCapture(int index, VideoCaptureAPIs api)

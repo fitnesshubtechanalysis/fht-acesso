@@ -372,25 +372,6 @@
                         </Button>
 
                         <Button Style="{StaticResource UnknownActionButton}"
-                                BorderBrush="#00D17E" Command="{Binding EnrollFaceCommand}">
-                            <StackPanel Orientation="Horizontal">
-                                <Viewbox Width="40" Height="40" Margin="0,0,16,0">
-                                    <Canvas Width="48" Height="48">
-                                        <Path Stroke="White" StrokeThickness="2.6" Fill="Transparent"
-                                              Data="M14,10 H8 V16 M34,10 H40 V16 M14,38 H8 V32 M34,38 H40 V32" />
-                                        <Ellipse Canvas.Left="16" Canvas.Top="12" Width="16" Height="16"
-                                                 Stroke="White" StrokeThickness="2.6" />
-                                        <Path Stroke="White" StrokeThickness="2.6" Data="M14,36 C14,28 34,28 34,36" />
-                                    </Canvas>
-                                </Viewbox>
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="Cadastrar meu rosto" FontSize="18" FontWeight="SemiBold" Foreground="White" />
-                                    <TextBlock Text="(autoatendimento)" FontSize="14" Foreground="#C8C8C8" />
-                                </StackPanel>
-                            </StackPanel>
-                        </Button>
-
-                        <Button Style="{StaticResource UnknownActionButton}"
                                 BorderBrush="#F15A29" Command="{Binding CallAttendantCommand}">
                             <StackPanel Orientation="Horizontal">
                                 <Grid Width="44" Height="44" Margin="0,0,16,0">

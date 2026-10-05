@@ -24,7 +24,7 @@ public sealed record FaceDetectionOptions(
         MinFaceSize: 28,
         ScaleFactor: 1.07,
         MinNeighbors: 2,
-        MinFaceAreaFraction: 0.016,
+        MinFaceAreaFraction: 0.04,
         CenterXMargin: 0.10,
         CenterYMargin: 0.08);
 
@@ -37,7 +37,7 @@ public sealed record FaceDetectionOptions(
         MinFaceSize: 28,
         ScaleFactor: 1.07,
         MinNeighbors: 2,
-        MinFaceAreaFraction: 0.018,
+        MinFaceAreaFraction: 0.04,
         CenterXMargin: 0.10,
         CenterYMargin: 0.08);
 
