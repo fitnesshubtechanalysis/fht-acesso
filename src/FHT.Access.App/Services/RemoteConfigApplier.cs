@@ -81,7 +81,7 @@ public sealed class RemoteConfigApplier : IRemoteConfigApplier
         if (config.VisitMaxHours is int vmh && vmh > 0)
             _settings.VisitMaxHours = vmh;
         if (config.FaceMatchThreshold is double fmt && fmt > 0)
-            _settings.FaceMatchThreshold = fmt;
+            _settings.FaceMatchThreshold = Math.Clamp(fmt, 0.72, 0.85);
         if (config.UseFakeTurnstile is bool fake)
             _settings.UseFakeTurnstile = fake;
         if (config.TurnstileIp is not null)

@@ -42,3 +42,6 @@ coverage*
 ## Publish
 publish/
 artifacts/
+
+## ArcFace weights (baixado no build/release; ~249 MB)
+src/FHT.Access.Face/models/arcfaceresnet100-8.onnx

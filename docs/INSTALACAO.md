@@ -104,7 +104,7 @@ Exemplo para piloto:
   "webcamIndex": 1,
   "webcamIndexExit": 2,
   "exitMode": "facial",
-  "faceMatchThreshold": 0.35,
+  "faceMatchThreshold": 0.72,
   "passageSuccessDisplaySec": 5,
   "passageReleaseMinDisplaySec": 3,
   "exitProcessFps": 12,
@@ -128,7 +128,7 @@ Exemplo para piloto:
 | `webcamIndexExit` | Câmera **saída** (`-1` = desligada; use índice diferente da entrada) |
 | `exitMode` | `facial` = saída com reconhecimento (liga a 2ª câmera). `free` = **só entrada facial**; a câmera de saída **não** abre nem reconhece (mesmo com `webcamIndexExit` preenchido). |
 | `freeGateMode` | `true` = catraca livre **com** facial: registra entrada/saída **sem** validar presença (reentrada / saída sem entrada). Plano inválido e facial desconhecida seguem iguais. **Passagem física na catraca continua obrigatória** para presença. `false` = trava de presença |
-| `faceMatchThreshold` | `0.35` recomendado. Valores altos (>0.7) migram sozinhos para 0.35 |
+| `faceMatchThreshold` | `0.72` recomendado. Abaixo de `0.72` ou acima de `0.85` o app grava `0.72` |
 | `passageSuccessDisplaySec` | Segundos na tela para “Entrada/Saída registrada” (padrão `5`) |
 | `passageReleaseMinDisplaySec` | Mínimo em “Pode passar na catraca/saída” (padrão `3`) |
 | `exitProcessFps` / `exitProcessMaxWidth` | Mais frames e resolução na saída (~1 m, câmera panorâmica) |

@@ -48,7 +48,7 @@ dotnet publish src\FHT.Access.App\FHT.Access.App.csproj `
 Saída: pasta **`publish\win-x64`** contendo:
 
 - `FHT.Access.App.exe` — executável principal
-- `models\` — modelos de reconhecimento facial (Haar + SFace)
+- `models\` — Haar e o ArcFace (`arcfaceresnet100-8.onnx`)
 - DLLs e runtime .NET embutidos
 
 Compacte em ZIP, copie para pendrive ou nuvem.
@@ -102,7 +102,7 @@ Exemplo para piloto com catraca real:
   "turnstileIp": "192.168.1.100",
   "turnstileSerial": "",
   "webcamIndex": 0,
-  "faceMatchThreshold": 0.35,
+  "faceMatchThreshold": 0.72,
   "adminPin": "1234",
   "attendantIdleMinutes": 5,
   "kioskPortrait": true
@@ -117,7 +117,7 @@ Exemplo para piloto com catraca real:
 | `useFakeTurnstile` | **`false`** na academia (catraca real) |
 | `turnstileIp` | IP da placa Toletus na rede local |
 | `webcamIndex` | `0` = primeira câmera; se errada, teste `1` |
-| `faceMatchThreshold` | `0.35` (não usar `0.92`) |
+| `faceMatchThreshold` | `0.72` (de `0.72` a `0.85`; valor menor sobe sozinho para `0.72`) |
 | `adminPin` | PIN do admin/atendente — **troque antes do piloto** |
 
 Reinicie o app após editar o JSON.
@@ -236,7 +236,7 @@ Alunos úteis para teste (Unidade Centro, conferir no Gestão antes):
 
 | Sintoma | O que verificar |
 |---------|-----------------|
-| “Não reconhece” sempre | Totem em modo automático? `RecognitionEnabled` — sair do atendimento; `faceMatchThreshold` ≤ 0.35 |
+| “Não reconhece” sempre | Totem em modo automático? `RecognitionEnabled` — sair do atendimento; o corte fica em `0.72` |
 | Libera quem não deveria | Log `Face identify:` — qual nome? Rosto cadastrado no aluno errado |
 | Gestão offline | URL, firewall, `device-auth`; totem funciona offline com cache antigo |
 | Catraca não abre | `useFakeTurnstile`, IP, cabo/rede, Admin → status catraca |

@@ -278,7 +278,11 @@ public partial class App : System.Windows.Application
                     continue;
 
                 if (!LocalHistogramFaceService.CanHydrate(stored.ModelVersion))
+                {
+                    _logger?.Information(
+                        $"Face template ignored for {member.Name}: engine {stored.ModelVersion} needs a new capture.");
                     continue;
+                }
 
                 try
                 {

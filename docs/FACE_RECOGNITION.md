@@ -4,8 +4,11 @@
 
 `LocalHistogramFaceService` (`FHT.Access.Face`):
 
-- Haar crops the face for matching even without the SFace ONNX model
-- SFace cosine cutoff defaults to `0.32` (spatial ~`0.42`) when settings still have the old `0.92` threshold
+- O Haar recorta o rosto e o ArcFace (512 números, cosseno) gera o vetor
+- O recorte só vale com olho visível. Boné sem rosto não recebe nome
+- Corte padrão `0.72`, piso `0.72`, teto `0.85`, margem `0.14` contra o segundo nome
+- Cadastros `sface-v1`, `hist-v1` e `hist-v2` não são carregados. Uma nova captura substitui o rosto da pessoa
+- O arquivo `arcfaceresnet100-8.onnx` (Apache 2.0, ONNX Model Zoo) entra no instalador pelo script `scripts/fetch-arcface-model.ps1`
 - Approach trigger: nearby centered face (≥ ~5% of frame, with 90° probes for portrait mounts)
 - Kiosk loop uses **local IdentifyOnly** (no HTTP); online enrich runs **once** after a match (1.5s timeout)
 - **Exit lane** uses `LaneRecognitionProfile.Exit`: shorter settle (700 ms), 22 identify attempts, Haar min face 20 px @ 960 px detect width, full 1080p JPEG pipeline

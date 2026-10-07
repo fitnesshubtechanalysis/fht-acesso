@@ -1,41 +1,36 @@
 using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using FHT.Access.Domain.Abstractions;
+using Microsoft.ML.OnnxRuntime;
+using Microsoft.ML.OnnxRuntime.Tensors;
 using OpenCvSharp;
-using OpenCvSharp.Dnn;
 
 namespace FHT.Access.Face;
 
 /// <summary>
-/// Local face engine: YuNet detect + SFace embeddings when models are present;
-/// otherwise a spatial histogram with rotation/mirror probes.
-/// Matches across 90° camera mounts and mirrored (selfie) frames.
+/// Local face engine: Haar recorta o rosto e o ArcFace gera o vetor de 512 números.
+/// Cadastros do SFace e do histograma não são lidos.
 /// </summary>
 public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDisposable
 {
     public const string HistModelVersion = "hist-v1";
     public const string SpatialModelVersion = "hist-v2";
     public const string SfaceModelVersion = "sface-v1";
-
-    public static readonly string[] CompatibleModelVersions =
-    [
-        HistModelVersion,
-        SpatialModelVersion,
-        SfaceModelVersion
-    ];
+    public const string ArcFaceModelVersion = "arcface-v1";
 
     private const int HistBins = 256;
     private const int Grid = 8;
     private const int CellBins = 16;
     private const int SpatialLen = Grid * Grid * CellBins;
-    private const int SfaceLen = 128;
-    // Acima do falso positivo visto na catraca (0.42). 0.55 rejeitava a própria pessoa.
-    private const float SfaceDefaultThreshold = 0.50f;
-    private const float SpatialDefaultThreshold = 0.72f;
+    private const int ArcFaceLen = 512;
+    // Cosseno do ArcFace. 0,45 ainda aceitava o mesmo aluno de boné.
+    private const float ArcFaceDefaultThreshold = 0.72f;
+    private const float ArcFaceMaxThreshold = 0.85f;
     /// <summary>Folga mínima contra o 2º nome. Sem isso o totem cumprimenta outra pessoa.</summary>
     private const float MinScoreMargin = 0.14f;
     private const int DetectMaxWidth = 640;
 
+    private static readonly byte[] ArcFaceMagic = "AF01"u8.ToArray();
     private static readonly byte[] SfaceMagic = "SF01"u8.ToArray();
     private static readonly byte[] SpatialMagic = "H2\0\0"u8.ToArray();
 
@@ -49,8 +44,11 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
 
     private CascadeClassifier? _frontal;
     private CascadeClassifier? _profile;
-    private Net? _sfaceNet;
-    private bool _useSface;
+    private CascadeClassifier? _eye;
+    private CascadeClassifier? _eyeGlasses;
+    private InferenceSession? _arcFace;
+    private string? _arcFaceInput;
+    private bool _useArcFace;
     private bool _engineReady;
     private bool _disposed;
 
@@ -68,13 +66,12 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         EnsureEngine();
     }
 
-    public string ModelVersion => _useSface ? SfaceModelVersion : SpatialModelVersion;
+    public string ModelVersion => ArcFaceModelVersion;
 
     public string? LastIdentifyNote { get; private set; }
 
     public static bool CanHydrate(string? modelVersion)
-        => !string.IsNullOrWhiteSpace(modelVersion)
-           && CompatibleModelVersions.Contains(modelVersion, StringComparer.Ordinal);
+        => string.Equals(modelVersion, ArcFaceModelVersion, StringComparison.Ordinal);
 
     /// <summary>
     /// Rápido: há rosto na zona da catraca para abrir o totem?
@@ -102,7 +99,7 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
 
             using var work = Downscale(src, detect.DetectMaxWidth);
             using var enhanced = EnhanceLighting(work);
-            return DetectLargestFace(enhanced, detect) is not null;
+            return DetectForMatch(enhanced, detect, enroll: false) is not null;
         }
         catch
         {
@@ -115,12 +112,14 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         ArgumentNullException.ThrowIfNull(imageBgrOrJpeg);
         ct.ThrowIfCancellationRequested();
         EnsureEngine();
+        if (!_useArcFace)
+            throw new InvalidOperationException("Modelo ArcFace não encontrado. A captura não foi gravada.");
 
         var enrollDetect = FaceDetectionOptions.Enrollment;
 
         // Um único build com regras de cadastro (Haar permissivo + fallback central).
         var stored = BuildStoredFace(imageBgrOrJpeg, enroll: true, enrollDetect);
-        if (stored.Sface.Count == 0 && stored.Spatial.Count == 0)
+        if (stored.Embeddings.Count == 0)
             throw new InvalidOperationException("Nenhum rosto detectado. Olhe para a câmera e tente de novo.");
 
         var conflicts = FindEnrollmentConflicts(stored, memberId);
@@ -147,8 +146,14 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         ct.ThrowIfCancellationRequested();
         EnsureEngine();
 
+        if (!_useArcFace)
+        {
+            LastIdentifyNote = "Modelo ArcFace não encontrado";
+            return Task.FromResult<FaceMatchResult?>(null);
+        }
+
         var probe = BuildStoredFace(imageBgrOrJpeg, enroll: false, detection);
-        if (probe.Sface.Count == 0 && probe.Spatial.Count == 0 && probe.Hists256.Count == 0)
+        if (probe.Embeddings.Count == 0)
         {
             LastIdentifyNote = "nenhum rosto no quadro";
             return Task.FromResult<FaceMatchResult?>(null);
@@ -167,7 +172,7 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         Guid? bestId = null;
         var bestScore = 0.0;
         var secondBest = 0.0;
-        var bestSface = false;
+        var bestArcFace = false;
 
         lock (_sync)
         {
@@ -176,13 +181,13 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
                 if (excludeMemberId is { } ex && memberId == ex)
                     continue;
 
-                var score = Score(probe, template, out var usedSface);
+                var score = Score(probe, template, out var usedArcFace);
                 if (score > bestScore)
                 {
                     secondBest = bestScore;
                     bestScore = score;
                     bestId = memberId;
-                    bestSface = usedSface;
+                    bestArcFace = usedArcFace;
                 }
                 else if (score > secondBest)
                 {
@@ -191,8 +196,8 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
             }
         }
 
-        var floor = bestSface ? SfaceDefaultThreshold : SpatialDefaultThreshold;
-        var configured = _threshold is > 0.46 and <= 0.70 ? _threshold : floor;
+        var floor = ArcFaceDefaultThreshold;
+        var configured = _threshold is >= ArcFaceDefaultThreshold and <= ArcFaceMaxThreshold ? _threshold : floor;
         var cutoff = Math.Max(configured, floor);
 
         if (bestId is null || bestScore < cutoff)
@@ -201,10 +206,9 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
             return null;
         }
 
-        // Com SFace carregado, histograma/espacial não abre a catraca nem escolhe um nome.
-        if (_useSface && !bestSface)
+        if (!bestArcFace)
         {
-            LastIdentifyNote = "SFace não confirmou o rosto";
+            LastIdentifyNote = "ArcFace não confirmou o rosto";
             return null;
         }
 
@@ -227,7 +231,7 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
     /// </summary>
     private List<(Guid MemberId, double Score)> FindEnrollmentConflicts(StoredFace probe, Guid excludeMemberId)
     {
-        var ranked = new List<(Guid MemberId, double Score, bool UsedSface)>();
+        var ranked = new List<(Guid MemberId, double Score, bool UsedArcFace)>();
         lock (_sync)
         {
             foreach (var (memberId, template) in _templates)
@@ -235,8 +239,8 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
                 if (memberId == excludeMemberId)
                     continue;
 
-                var score = Score(probe, template, out var usedSface);
-                ranked.Add((memberId, score, usedSface));
+                var score = Score(probe, template, out var usedArcFace);
+                ranked.Add((memberId, score, usedArcFace));
             }
         }
 
@@ -244,10 +248,10 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         var conflicts = new List<(Guid MemberId, double Score)>();
         foreach (var hit in ranked)
         {
-            var floor = hit.UsedSface ? SfaceDefaultThreshold : SpatialDefaultThreshold;
-            var configured = _threshold is > 0.46 and <= 0.70 ? _threshold : floor;
+            var floor = ArcFaceDefaultThreshold;
+            var configured = _threshold is >= ArcFaceDefaultThreshold and <= ArcFaceMaxThreshold ? _threshold : floor;
             var cutoff = Math.Max(configured, floor);
-            if (_useSface && !hit.UsedSface)
+            if (!hit.UsedArcFace)
                 continue;
             if (hit.Score < cutoff)
                 continue;
@@ -287,10 +291,15 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         {
             _frontal?.Dispose();
             _profile?.Dispose();
-            _sfaceNet?.Dispose();
+            _eye?.Dispose();
+            _eyeGlasses?.Dispose();
+            _arcFace?.Dispose();
             _frontal = null;
             _profile = null;
-            _sfaceNet = null;
+            _eye = null;
+            _eyeGlasses = null;
+            _arcFace = null;
+            _arcFaceInput = null;
         }
     }
 
@@ -331,25 +340,17 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
             }
             catch (InvalidOperationException) when (enroll)
             {
-                // "Nenhum rosto detectado" e similares — não mascarar com histograma do frame.
                 throw;
             }
             catch
             {
-                // Identify sem rosto não pode cair no histograma do frame inteiro:
-                // a câmera vazia (ou o último JPEG preso) casava com um aluno.
                 if (!enroll)
                     return new StoredFace();
+                throw new InvalidOperationException("Não foi possível ler o rosto. Olhe para a câmera e tente de novo.");
             }
         }
 
-        if (!enroll)
-            return new StoredFace();
-
-        return new StoredFace
-        {
-            Hists256 = [BuildHistogramFromBytes(imageBgrOrJpeg)]
-        };
+        return new StoredFace();
     }
 
     private StoredFace BuildWithOpenCv(
@@ -360,11 +361,7 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         var detect = detection ?? FaceDetectionOptions.Default;
         using var src = Cv2.ImDecode(imageBgrOrJpeg, ImreadModes.Color);
         if (src.Empty())
-        {
-            if (!enroll)
-                return new StoredFace();
-            return new StoredFace { Hists256 = [BuildHistogramFromBytes(imageBgrOrJpeg)] };
-        }
+            return new StoredFace();
 
         var stored = new StoredFace();
         var variants = BuildVariants(src, enroll);
@@ -375,42 +372,19 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
             {
                 using var work = Downscale(variant, detect.DetectMaxWidth);
                 using var enhanced = EnhanceLighting(work);
-                // O mesmo enquadramento do cadastro. O filtro estrito sozinho
-                // gravava a foto e, na catraca, não achava o rosto.
                 var face = DetectForMatch(enhanced, detect, enroll);
-                Mat region;
-                if (face is { } rect)
-                {
-                    detected = true;
-                    region = PaddedSquare(enhanced, rect);
-                }
-                else if (enroll)
-                {
+                if (face is not { } rect)
                     continue;
-                }
-                else
+
+                detected = true;
+                using var region = PaddedSquare(enhanced, rect);
+                if (_useArcFace)
                 {
-                    // Identify: sem rosto Haar válido (longe / lateral / fundo) → não inventa crop.
-                    continue;
+                    foreach (var emb in EmbedCrop(region))
+                        stored.Embeddings.Add(emb);
                 }
 
-                try
-                {
-                    if (_useSface)
-                    {
-                        foreach (var emb in EmbedCrop(region, enroll))
-                            stored.Sface.Add(emb);
-                    }
-
-                    stored.Spatial.Add(BuildSpatial(region));
-                    stored.Hists256.Add(BuildIntensityHist(region));
-                }
-                finally
-                {
-                    region.Dispose();
-                }
-
-                if (!enroll && (stored.Sface.Count > 0 || detected))
+                if (!enroll && stored.Embeddings.Count > 0)
                     break;
             }
         }
@@ -430,9 +404,6 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         if (!enroll && !detected)
             return stored;
 
-        if (stored.Sface.Count == 0 && stored.Spatial.Count == 0 && stored.Hists256.Count == 0)
-            stored.Hists256.Add(BuildHistogramFromBytes(imageBgrOrJpeg));
-
         return stored;
     }
 
@@ -447,47 +418,39 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         return [src];
     }
 
-    private List<float[]> EmbedCrop(Mat bgrCrop, bool enroll)
+    private List<float[]> EmbedCrop(Mat bgrCrop)
     {
         var found = new List<float[]>();
         lock (_cvLock)
         {
-            if (_sfaceNet is null)
+            if (_arcFace is null)
                 return found;
 
             using var aligned = new Mat();
-            Cv2.Resize(bgrCrop, aligned, new Size(112, 112), 0, 0, InterpolationFlags.Area);
+            if (bgrCrop.Width == 112 && bgrCrop.Height == 112)
+                bgrCrop.CopyTo(aligned);
+            else
+                Cv2.Resize(bgrCrop, aligned, new Size(112, 112), 0, 0, InterpolationFlags.Area);
             found.Add(ToEmbedding(aligned));
-
-            using var flipped = new Mat();
-            Cv2.Flip(aligned, flipped, FlipMode.Y);
-            found.Add(ToEmbedding(flipped));
-
-            if (enroll)
-            {
-                using var slight = new Mat();
-                var center = new Point2f(aligned.Width / 2f, aligned.Height / 2f);
-                using var rot = Cv2.GetRotationMatrix2D(center, 12, 1.0);
-                Cv2.WarpAffine(aligned, slight, rot, aligned.Size());
-                found.Add(ToEmbedding(slight));
-            }
         }
 
         return found;
     }
 
     /// <summary>
-    /// Cadastro e reconhecimento usam o mesmo rosto.
-    /// Se o filtro de centro falhar, aceita o maior rosto perto da câmera
-    /// e ignora um vulto pequeno no fundo.
+    /// Reconhecimento só aceita o Haar frontal com olhos no recorte.
+    /// Boné, ombro e vulto no fundo não viram nome.
     /// </summary>
     private Rect? DetectForMatch(Mat bgr, FaceDetectionOptions detect, bool enroll)
     {
-        var strict = DetectLargestFace(bgr, detect);
-        if (strict is not null)
-            return strict;
+        var tuned = enroll
+            ? detect
+            : detect with { MinNeighbors = Math.Max(detect.MinNeighbors, 3) };
+        var strict = DetectLargestFace(bgr, tuned, allowProfile: false);
+        if (strict is { } strictFace && HasVisibleEyes(bgr, strictFace))
+            return strictFace;
 
-        if (!enroll && detect.MinNeighbors >= 4)
+        if (!enroll)
             return null;
 
         var loose = DetectLargestFaceLoose(bgr, detect);
@@ -509,10 +472,97 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         if (cy < bgr.Height * 0.04 || cy > bgr.Height * 0.96)
             return null;
 
-        return face;
+        return HasVisibleEyes(bgr, face) ? face : null;
     }
 
-    private Rect? DetectLargestFace(Mat bgr, FaceDetectionOptions detect)
+    /// <summary>
+    /// Olho dentro do recorte. O Haar inclui a testa e o boné, então o olho
+    /// não fica só no topo. Um botão de boné, sem pele embaixo, não conta.
+    /// </summary>
+    private bool HasVisibleEyes(Mat bgr, Rect face)
+    {
+        if (_eye is null && _eyeGlasses is null)
+            return false;
+
+        var band = ClampRect(bgr, new Rect(
+            face.X,
+            face.Y + (int)(face.Height * 0.08),
+            face.Width,
+            Math.Max(8, (int)(face.Height * 0.74))));
+        if (band.Width < 24 || band.Height < 16)
+            return false;
+
+        using var roi = new Mat(bgr, band);
+        using var gray = new Mat();
+        Cv2.CvtColor(roi, gray, ColorConversionCodes.BGR2GRAY);
+        Cv2.EqualizeHist(gray, gray);
+
+        var minEye = new Size(Math.Max(6, band.Width / 12), Math.Max(6, band.Height / 12));
+        var maxEyeW = band.Width * 0.45;
+        var count = 0;
+        if (_eye is not null)
+            count = Math.Max(count, CountReasonableEyes(_eye, gray, minEye, 2, maxEyeW));
+        if (_eyeGlasses is not null)
+            count = Math.Max(count, CountReasonableEyes(_eyeGlasses, gray, minEye, 2, maxEyeW));
+        if (count >= 2)
+            return true;
+        if (count == 0)
+            return false;
+
+        var lower = ClampRect(bgr, new Rect(
+            face.X,
+            face.Y + face.Height / 2,
+            face.Width,
+            Math.Max(1, face.Height - face.Height / 2)));
+        return SkinFraction(bgr, lower) >= 0.12;
+    }
+
+    private static double SkinFraction(Mat bgr, Rect roi)
+    {
+        if (roi.Width < 8 || roi.Height < 8)
+            return 0;
+
+        using var crop = new Mat(bgr, roi);
+        using var ycrcb = new Mat();
+        Cv2.CvtColor(crop, ycrcb, ColorConversionCodes.BGR2YCrCb);
+        using var mask = new Mat();
+        Cv2.InRange(ycrcb, new Scalar(0, 125, 70), new Scalar(255, 185, 145), mask);
+        return Cv2.CountNonZero(mask) / (double)(roi.Width * roi.Height);
+    }
+
+    private static int CountReasonableEyes(
+        CascadeClassifier cascade,
+        Mat gray,
+        Size minEye,
+        int minNeighbors,
+        double maxEyeWidth)
+    {
+        var hits = cascade.DetectMultiScale(
+            gray,
+            1.1,
+            minNeighbors,
+            HaarDetectionTypes.ScaleImage,
+            minEye);
+        var count = 0;
+        foreach (var hit in hits)
+        {
+            if (hit.Width <= maxEyeWidth)
+                count++;
+        }
+
+        return count;
+    }
+
+    private static Rect ClampRect(Mat src, Rect rect)
+    {
+        var x = Math.Clamp(rect.X, 0, Math.Max(0, src.Width - 1));
+        var y = Math.Clamp(rect.Y, 0, Math.Max(0, src.Height - 1));
+        var w = Math.Clamp(rect.Width, 0, src.Width - x);
+        var h = Math.Clamp(rect.Height, 0, src.Height - y);
+        return new Rect(x, y, w, h);
+    }
+
+    private Rect? DetectLargestFace(Mat bgr, FaceDetectionOptions detect, bool allowProfile = true)
     {
         using var gray = new Mat();
         Cv2.CvtColor(bgr, gray, ColorConversionCodes.BGR2GRAY);
@@ -527,7 +577,7 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
                 detect.MinNeighbors,
                 HaarDetectionTypes.ScaleImage,
                 minSize);
-        if (hits.Length == 0 && _profile is not null)
+        if (hits.Length == 0 && allowProfile && _profile is not null)
             hits = _profile.DetectMultiScale(
                 gray,
                 detect.ScaleFactor,
@@ -607,21 +657,31 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         return new Mat(bgr, box).Clone();
     }
 
-    private float[] ToEmbedding(Mat alignedBgr)
+    private float[] ToEmbedding(Mat bgr112)
     {
-        using var blob = CvDnn.BlobFromImage(
-            alignedBgr,
-            scaleFactor: 1.0,
-            size: new Size(112, 112),
-            mean: new Scalar(0, 0, 0),
-            swapRB: true,
-            crop: false);
-        _sfaceNet!.SetInput(blob);
-        using var feature = _sfaceNet.Forward();
-        var emb = new float[SfaceLen];
-        var n = Math.Min(SfaceLen, feature.Total());
-        Marshal.Copy(feature.Data, emb, 0, (int)n);
-        return emb;
+        var input = new float[3 * 112 * 112];
+        for (var y = 0; y < bgr112.Rows; y++)
+        {
+            for (var x = 0; x < bgr112.Cols; x++)
+            {
+                var px = bgr112.At<Vec3b>(y, x);
+                var i = y * 112 + x;
+                input[i] = (px.Item2 - 127.5f) / 128f;
+                input[112 * 112 + i] = (px.Item1 - 127.5f) / 128f;
+                input[2 * 112 * 112 + i] = (px.Item0 - 127.5f) / 128f;
+            }
+        }
+
+        var tensor = new DenseTensor<float>(input, [1, 3, 112, 112]);
+        var feeds = new List<NamedOnnxValue>
+        {
+            NamedOnnxValue.CreateFromTensor(_arcFaceInput!, tensor)
+        };
+        using var results = _arcFace!.Run(feeds);
+        var output = results[0].AsEnumerable<float>().Take(ArcFaceLen).ToArray();
+        if (output.Length < ArcFaceLen)
+            throw new InvalidOperationException("O ArcFace não devolveu o vetor de 512 números.");
+        return output;
     }
 
     private static Mat Downscale(Mat bgr, int detectMaxWidth)
@@ -762,17 +822,15 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
 
     private static Mat FaceishCrop(Mat gray) => new Mat(gray, FaceishRect(gray)).Clone();
 
-    private static double Score(StoredFace probe, StoredFace template, out bool usedSface)
+    private static double Score(StoredFace probe, StoredFace template, out bool usedArcFace)
     {
-        usedSface = false;
+        usedArcFace = false;
         var best = 0.0;
 
-        if (probe.Sface.Count > 0 && template.Sface.Count > 0)
+        if (probe.Embeddings.Count > 0 && template.Embeddings.Count > 0)
         {
-            usedSface = true;
-            // Só o primeiro vetor, o rosto sem espelho e sem giro.
-            // O máximo entre espelho e rotação escolhia o nome de outra pessoa.
-            return Cosine(probe.Sface[0], template.Sface[0]);
+            usedArcFace = true;
+            return Cosine(probe.Embeddings[0], template.Embeddings[0]);
         }
 
         foreach (var a in probe.Spatial)
@@ -827,16 +885,16 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
 
     private static byte[] SerializeStored(StoredFace stored)
     {
-        if (stored.Sface.Count > 0)
+        if (stored.Embeddings.Count > 0)
         {
-            var count = stored.Sface.Count;
-            var bytes = new byte[4 + 4 + (count * SfaceLen * sizeof(float))];
-            SfaceMagic.CopyTo(bytes, 0);
+            var count = stored.Embeddings.Count;
+            var bytes = new byte[4 + 4 + (count * ArcFaceLen * sizeof(float))];
+            ArcFaceMagic.CopyTo(bytes, 0);
             BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(4), count);
             var offset = 8;
-            foreach (var emb in stored.Sface)
+            foreach (var emb in stored.Embeddings)
             {
-                for (var i = 0; i < SfaceLen; i++)
+                for (var i = 0; i < ArcFaceLen; i++)
                 {
                     BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(offset), emb[i]);
                     offset += sizeof(float);
@@ -871,20 +929,23 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
     private static StoredFace DeserializeStored(byte[] blob)
     {
         if (blob.Length >= 8 && blob.AsSpan(0, 4).SequenceEqual(SfaceMagic))
+            return new StoredFace();
+
+        if (blob.Length >= 8 && blob.AsSpan(0, 4).SequenceEqual(ArcFaceMagic))
         {
             var count = BinaryPrimitives.ReadInt32LittleEndian(blob.AsSpan(4));
             var stored = new StoredFace();
             var offset = 8;
             for (var n = 0; n < count; n++)
             {
-                var emb = new float[SfaceLen];
-                for (var i = 0; i < SfaceLen; i++)
+                var emb = new float[ArcFaceLen];
+                for (var i = 0; i < ArcFaceLen; i++)
                 {
                     emb[i] = BinaryPrimitives.ReadSingleLittleEndian(blob.AsSpan(offset));
                     offset += sizeof(float);
                 }
 
-                stored.Sface.Add(emb);
+                stored.Embeddings.Add(emb);
             }
 
             return stored;
@@ -955,29 +1016,46 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
             {
                 var frontal = FindModel("haarcascade_frontalface_alt2.xml");
                 var profile = FindModel("haarcascade_profileface.xml");
-                var sface = FindModel("face_recognition_sface_2021dec.onnx");
+                var eye = FindModel("haarcascade_eye.xml");
+                var eyeGlasses = FindModel("haarcascade_eye_tree_eyeglasses.xml");
+                var arcface = FindModel("arcfaceresnet100-8.onnx");
                 if (OpenCvAvailable && frontal is not null)
                 {
                     _frontal = new CascadeClassifier(frontal);
                     if (profile is not null)
                         _profile = new CascadeClassifier(profile);
+                    if (eye is not null)
+                        _eye = new CascadeClassifier(eye);
+                    if (eyeGlasses is not null)
+                        _eyeGlasses = new CascadeClassifier(eyeGlasses);
                 }
 
-                if (OpenCvAvailable && sface is not null && _frontal is not null && !_frontal.Empty())
+                if (arcface is not null)
                 {
-                    _sfaceNet = CvDnn.ReadNetFromOnnx(sface);
-                    _useSface = _sfaceNet is not null;
+                    var options = new SessionOptions
+                    {
+                        GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL,
+                        IntraOpNumThreads = 2
+                    };
+                    _arcFace = new InferenceSession(arcface, options);
+                    _arcFaceInput = _arcFace.InputMetadata.Keys.First();
+                    _useArcFace = true;
                 }
             }
             catch
             {
                 _frontal?.Dispose();
                 _profile?.Dispose();
-                _sfaceNet?.Dispose();
+                _eye?.Dispose();
+                _eyeGlasses?.Dispose();
+                _arcFace?.Dispose();
                 _frontal = null;
                 _profile = null;
-                _sfaceNet = null;
-                _useSface = false;
+                _eye = null;
+                _eyeGlasses = null;
+                _arcFace = null;
+                _arcFaceInput = null;
+                _useArcFace = false;
             }
 
             _engineReady = true;
@@ -1022,7 +1100,7 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
 
     private sealed class StoredFace
     {
-        public List<float[]> Sface { get; } = [];
+        public List<float[]> Embeddings { get; } = [];
         public List<double[]> Spatial { get; init; } = [];
         public List<double[]> Hists256 { get; init; } = [];
     }
