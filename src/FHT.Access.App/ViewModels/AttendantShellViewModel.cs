@@ -847,7 +847,7 @@ public sealed class AttendantShellViewModel : ViewModelBase, IDisposable
                     continue;
                 }
 
-                var captureBytes = (byte[])jpeg.Clone();
+                var captureBytes = EnrollmentGuideCrop.Apply((byte[])jpeg.Clone());
                 try
                 {
                     await Task.Run(async () =>

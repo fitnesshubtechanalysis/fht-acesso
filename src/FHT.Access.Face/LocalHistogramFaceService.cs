@@ -8,15 +8,20 @@ using OpenCvSharp;
 namespace FHT.Access.Face;
 
 /// <summary>
-/// Local face engine: Haar recorta o rosto e o ArcFace gera o vetor de 512 números.
-/// Cadastros do SFace e do histograma não são lidos.
+/// YuNet marca olhos, nariz e boca. O ArcFace recebe só o rosto alinhado nesses pontos.
+/// Cadastros anteriores (Haar, SFace, histograma) não são lidos.
 /// </summary>
 public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDisposable
 {
     public const string HistModelVersion = "hist-v1";
     public const string SpatialModelVersion = "hist-v2";
     public const string SfaceModelVersion = "sface-v1";
-    public const string ArcFaceModelVersion = "arcface-v1";
+    public const string ArcFaceModelVersion = "arcface-v6";
+    public const string ArcFaceCollapsedVersion = "arcface-v5";
+    public const string ArcFaceUnalignedVersion = "arcface-v1";
+    public const string ArcFaceBackgroundVersion = "arcface-v2";
+    public const string ArcFaceFullFrameVersion = "arcface-v3";
+    public const string ArcFaceHaarEyesVersion = "arcface-v4";
 
     private const int HistBins = 256;
     private const int Grid = 8;
@@ -42,6 +47,7 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
     private readonly string? _modelDirectory;
     private static readonly bool OpenCvAvailable = DetectOpenCv();
 
+    private YuNetAligner? _aligner;
     private CascadeClassifier? _frontal;
     private CascadeClassifier? _profile;
     private CascadeClassifier? _eye;
@@ -87,9 +93,9 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         var detect = detection ?? FaceDetectionOptions.ApproachPresence;
         try
         {
-            if (!OpenCvAvailable || _frontal is null || _frontal.Empty())
+            if (!OpenCvAvailable || _aligner is null)
             {
-                // Sem Haar: não bloqueia o totem — deixa o movimento decidir.
+                // Sem detector: não bloqueia o totem — deixa o movimento decidir.
                 return true;
             }
 
@@ -97,9 +103,7 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
             if (src.Empty())
                 return false;
 
-            using var work = Downscale(src, detect.DetectMaxWidth);
-            using var enhanced = EnhanceLighting(work);
-            return DetectForMatch(enhanced, detect, enroll: false) is not null;
+            return _aligner.TrySelect(src, detect, out _);
         }
         catch
         {
@@ -112,12 +116,12 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         ArgumentNullException.ThrowIfNull(imageBgrOrJpeg);
         ct.ThrowIfCancellationRequested();
         EnsureEngine();
-        if (!_useArcFace)
+        if (!_useArcFace || _aligner is null)
             throw new InvalidOperationException("Modelo ArcFace não encontrado. A captura não foi gravada.");
 
         var enrollDetect = FaceDetectionOptions.Enrollment;
 
-        // Um único build com regras de cadastro (Haar permissivo + fallback central).
+        // Um único build: YuNet no recorte e ArcFace no rosto alinhado pelos olhos.
         var stored = BuildStoredFace(imageBgrOrJpeg, enroll: true, enrollDetect);
         if (stored.Embeddings.Count == 0)
             throw new InvalidOperationException("Nenhum rosto detectado. Olhe para a câmera e tente de novo.");
@@ -289,6 +293,8 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         _disposed = true;
         lock (_cvLock)
         {
+            _aligner?.Dispose();
+            _aligner = null;
             _frontal?.Dispose();
             _profile?.Dispose();
             _eye?.Dispose();
@@ -370,18 +376,17 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         {
             foreach (var variant in variants)
             {
-                using var work = Downscale(variant, detect.DetectMaxWidth);
-                using var enhanced = EnhanceLighting(work);
-                var face = DetectForMatch(enhanced, detect, enroll);
-                if (face is not { } rect)
+                if (_aligner is null || !_aligner.TrySelect(variant, detect, out var landmarks))
+                    continue;
+
+                using var aligned = YuNetAligner.Align(variant, landmarks);
+                if (aligned is null)
                     continue;
 
                 detected = true;
-                using var region = PaddedSquare(enhanced, rect);
                 if (_useArcFace)
                 {
-                    foreach (var emb in EmbedCrop(region))
-                        stored.Embeddings.Add(emb);
+                    stored.Embeddings.Add(ToEmbedding(aligned));
                 }
 
                 if (!enroll && stored.Embeddings.Count > 0)
@@ -398,7 +403,8 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         }
 
         if (enroll && !detected)
-            throw new InvalidOperationException("Nenhum rosto detectado. Olhe para a câmera e tente de novo.");
+            throw new InvalidOperationException(
+                "Coloque o rosto dentro do círculo, com os dois olhos visíveis, e tente de novo.");
 
         // Identify sem face: não preencher histograma do frame inteiro (falso positivo de longe).
         if (!enroll && !detected)
@@ -657,6 +663,14 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
         return new Mat(bgr, box).Clone();
     }
 
+    internal double CompareJpegs(byte[] jpegA, byte[] jpegB)
+    {
+        EnsureEngine();
+        using var a = Cv2.ImDecode(jpegA, ImreadModes.Color);
+        using var b = Cv2.ImDecode(jpegB, ImreadModes.Color);
+        return Cosine(ToEmbedding(a), ToEmbedding(b));
+    }
+
     private float[] ToEmbedding(Mat bgr112)
     {
         var input = new float[3 * 112 * 112];
@@ -666,9 +680,11 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
             {
                 var px = bgr112.At<Vec3b>(y, x);
                 var i = y * 112 + x;
-                input[i] = (px.Item2 - 127.5f) / 128f;
-                input[112 * 112 + i] = (px.Item1 - 127.5f) / 128f;
-                input[2 * 112 * 112 + i] = (px.Item0 - 127.5f) / 128f;
+                // Este ArcFace já normaliza dentro do arquivo. Mandar (pixel-127,5)/128
+                // deixava todo rosto com o mesmo número.
+                input[i] = px.Item0;
+                input[112 * 112 + i] = px.Item1;
+                input[2 * 112 * 112 + i] = px.Item2;
             }
         }
 
@@ -1019,6 +1035,9 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
                 var eye = FindModel("haarcascade_eye.xml");
                 var eyeGlasses = FindModel("haarcascade_eye_tree_eyeglasses.xml");
                 var arcface = FindModel("arcfaceresnet100-8.onnx");
+                var yunet = FindModel("face_detection_yunet_2023mar.onnx");
+                if (OpenCvAvailable && yunet is not null)
+                    _aligner = new YuNetAligner(yunet, _cvLock);
                 if (OpenCvAvailable && frontal is not null)
                 {
                     _frontal = new CascadeClassifier(frontal);
@@ -1044,6 +1063,8 @@ public sealed class LocalHistogramFaceService : IFaceRecognitionService, IDispos
             }
             catch
             {
+                _aligner?.Dispose();
+                _aligner = null;
                 _frontal?.Dispose();
                 _profile?.Dispose();
                 _eye?.Dispose();

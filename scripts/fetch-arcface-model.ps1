@@ -19,3 +19,7 @@ function Get-Model($name, $url, $minBytes) {
 Get-Model "arcfaceresnet100-8.onnx" `
     "https://huggingface.co/onnxmodelzoo/arcfaceresnet100-8/resolve/main/arcfaceresnet100-8.onnx" `
     20000000
+
+Get-Model "face_detection_yunet_2023mar.onnx" `
+    "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx" `
+    200000
