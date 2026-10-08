@@ -26,6 +26,8 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
     private readonly UpdateService _updateService;
     private readonly Dispatcher _dispatcher;
     private readonly DispatcherTimer _clockTimer;
+    private readonly DispatcherTimer _idleSlideTimer;
+    private bool _showAdvertiseSlide;
 
     private BitmapSource? _preview;
     private AccessUiState _uiState = AccessUiState.AutomaticIdle;
@@ -62,6 +64,8 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
 
         _clockTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _clockTimer.Tick += (_, _) => RefreshClock();
+        _idleSlideTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(12) };
+        _idleSlideTimer.Tick += (_, _) => AdvanceIdleSlide();
         RefreshClock();
         RefreshOnlineStatus();
 
@@ -122,6 +126,21 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
         or AccessUiState.PassageConfirmed;
 
     public string IdleMessage => IdleHeadline;
+
+    public bool ShowAdvertiseSlide
+    {
+        get => _showAdvertiseSlide;
+        private set
+        {
+            if (!SetProperty(ref _showAdvertiseSlide, value))
+                return;
+            OnPropertyChanged(nameof(ShowBrandSlide));
+        }
+    }
+
+    public bool ShowBrandSlide => !ShowAdvertiseSlide;
+
+    public string AppVersionLabel => "v" + _updateService.CurrentVersion;
 
     public string ResultMessage
     {
@@ -227,6 +246,8 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
 
         if (!_clockTimer.IsEnabled)
             _clockTimer.Start();
+        if (!_idleSlideTimer.IsEnabled)
+            _idleSlideTimer.Start();
 
         if (_subscribed)
             return;
@@ -272,6 +293,7 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
         _states.ActiveLaneChanged -= OnActiveLaneChanged;
         _updateService.StateChanged -= OnUpdateStateChanged;
         _clockTimer.Stop();
+        _idleSlideTimer.Stop();
         StopCaptureSubscription();
     }
 
@@ -325,6 +347,13 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
             AccessUiState.Denied => AccessDecisionEvaluator.PublicReception,
             _ => string.Empty
         };
+    }
+
+    private void AdvanceIdleSlide()
+    {
+        if (!IsIdle)
+            return;
+        ShowAdvertiseSlide = !ShowAdvertiseSlide;
     }
 
     private void RefreshClock()

@@ -48,7 +48,29 @@
                        HorizontalAlignment="Center"
                        VerticalAlignment="Center"
                        Margin="0,0,0,56"
-                       RenderOptions.BitmapScalingMode="HighQuality" />
+                       RenderOptions.BitmapScalingMode="HighQuality"
+                       Visibility="{Binding ShowBrandSlide, Converter={StaticResource BoolToVis}}" />
+
+                <Grid Background="#050505" Margin="0,0,0,56"
+                      Visibility="{Binding ShowAdvertiseSlide, Converter={StaticResource BoolToVis}}">
+                    <StackPanel VerticalAlignment="Center" Margin="48,0">
+                        <Rectangle Width="72" Height="3" Fill="#F15A29" HorizontalAlignment="Center" />
+                        <TextBlock Text="ANUNCIE" FontSize="64" FontWeight="Bold" Foreground="White"
+                                   HorizontalAlignment="Center" Margin="0,36,0,0" />
+                        <TextBlock Text="AQUI" FontSize="64" FontWeight="Bold" Foreground="#F15A29"
+                                   HorizontalAlignment="Center" Margin="0,0,0,0" />
+                        <TextBlock Text="Sua marca na tela de acesso da academia."
+                                   FontSize="22" Foreground="#D0D0D0" TextAlignment="Center"
+                                   TextWrapping="Wrap" HorizontalAlignment="Center"
+                                   Margin="12,28,12,0" />
+                        <Border BorderBrush="#2A2A2A" BorderThickness="1" CornerRadius="16"
+                                Background="#101010" Padding="28,22" Margin="8,48,8,0">
+                            <TextBlock Text="Espaço reservado para anúncio."
+                                       FontSize="16" Foreground="#9A9A9A" TextAlignment="Center"
+                                       TextWrapping="Wrap" />
+                        </Border>
+                    </StackPanel>
+                </Grid>
 
                 <Border Height="56" VerticalAlignment="Bottom" Background="{StaticResource FooterBg}">
                     <Grid Margin="24,0">
@@ -548,6 +570,19 @@
                                HorizontalAlignment="Center" Margin="0,56,0,0" />
                 </StackPanel>
             </Grid>
+
+            <Border Panel.ZIndex="40"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Bottom"
+                    Margin="16,0,0,70"
+                    Background="#99000000"
+                    CornerRadius="8"
+                    Padding="8,3"
+                    IsHitTestVisible="False">
+                <TextBlock Text="{Binding AppVersionLabel}"
+                           FontSize="12"
+                           Foreground="#CCFFFFFF" />
+            </Border>
 
             <!-- ===================== UPDATE BANNER (disponível, aguardando janela) ===================== -->
             <Border VerticalAlignment="Bottom"

@@ -11,6 +11,8 @@ namespace FHT.Access.App.Services;
 /// </summary>
 public sealed class VelopackAppUpdater : IAppUpdater
 {
+    private UpdateManager? _manager;
+    private string? _feedUrl;
     private UpdateInfo? _pendingUpdate;
 
     public string CurrentVersion
@@ -32,7 +34,7 @@ public sealed class VelopackAppUpdater : IAppUpdater
 
     public async Task<string?> CheckForUpdateAsync(string feedUrl, CancellationToken ct = default)
     {
-        var mgr = new UpdateManager(new SimpleWebSource(feedUrl));
+        var mgr = ManagerFor(feedUrl);
         _pendingUpdate = await mgr.CheckForUpdatesAsync().ConfigureAwait(false);
         return _pendingUpdate?.TargetFullRelease?.Version?.ToString();
     }
@@ -42,15 +44,13 @@ public sealed class VelopackAppUpdater : IAppUpdater
         IProgress<int> progress,
         CancellationToken ct = default)
     {
+        var mgr = ManagerFor(feedUrl);
         if (_pendingUpdate is null)
         {
-            // Segurança: tenta checar de novo.
-            var mgr2 = new UpdateManager(new SimpleWebSource(feedUrl));
-            _pendingUpdate = await mgr2.CheckForUpdatesAsync().ConfigureAwait(false)
+            _pendingUpdate = await mgr.CheckForUpdatesAsync().ConfigureAwait(false)
                 ?? throw new InvalidOperationException("Não há update disponível para baixar.");
         }
 
-        var mgr = new UpdateManager(new SimpleWebSource(feedUrl));
         await mgr.DownloadUpdatesAsync(
             _pendingUpdate,
             progress.Report,
@@ -60,11 +60,35 @@ public sealed class VelopackAppUpdater : IAppUpdater
 
     public void ApplyAndRestart()
     {
-        if (_pendingUpdate is null)
+        if (_pendingUpdate?.TargetFullRelease is null || _manager is null)
             throw new InvalidOperationException("Nenhum update baixado.");
 
-        var mgr = new UpdateManager(new SimpleWebSource(string.Empty));
-        mgr.ApplyUpdatesAndRestart(_pendingUpdate);
-        // Não retorna — processo reiniciado pelo Velopack.
+        var asset = _pendingUpdate.TargetFullRelease;
+        var manager = _manager;
+
+        // O helper do Velopack espera este processo terminar. O manager vazio
+        // usado antes lançava erro aqui e o pacote só era aplicado na próxima abertura.
+        void Apply()
+        {
+            manager.WaitExitThenApplyUpdates(asset, silent: true, restart: true);
+            Environment.Exit(0);
+        }
+
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+            dispatcher.Invoke(Apply);
+        else
+            Apply();
+    }
+
+    private UpdateManager ManagerFor(string feedUrl)
+    {
+        if (_manager is not null && string.Equals(_feedUrl, feedUrl, StringComparison.Ordinal))
+            return _manager;
+
+        _pendingUpdate = null;
+        _feedUrl = feedUrl;
+        _manager = new UpdateManager(new SimpleWebSource(feedUrl));
+        return _manager;
     }
 }

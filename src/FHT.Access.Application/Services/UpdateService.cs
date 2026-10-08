@@ -232,7 +232,7 @@ public sealed class UpdateService : IAsyncDisposable, IDisposable
         }
         catch (Exception ex)
         {
-            _opts.LogError?.Invoke($"[Update] Falha: {ex.Message}");
+            _opts.LogError?.Invoke($"[Update] Falha: {ex}");
             _mode.EnterAutomatic();
             Transition(UpdateUiState.Available);
         }
