@@ -77,11 +77,13 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
     /// Aluno que acabou de ser liberado. Não abre de novo enquanto o rosto
     /// não sair da câmera — frame preso ou fundo vazio não vira outra entrada.
     /// </summary>
-    private Guid? _latchedMemberId;
+    private readonly ReleasedMemberLatch _released = new();
+
+    private FaceMatchResult? _primedMatch;
 
     private DateTime? _faceAbsentSinceUtc;
 
-    private static readonly TimeSpan FaceAbsenceToRearm = TimeSpan.FromMilliseconds(2000);
+    private static readonly TimeSpan FaceAbsenceToRearm = TimeSpan.FromMilliseconds(600);
 
     private TaskCompletionSource? _resultHold;
 
@@ -321,10 +323,10 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
                     _faceAbsentSinceUtc ??= DateTime.UtcNow;
 
-                    if (_latchedMemberId is not null
+                    if (_released.IsArmed
                         && DateTime.UtcNow - _faceAbsentSinceUtc.Value >= FaceAbsenceToRearm)
                     {
-                        _latchedMemberId = null;
+                        _released.Clear();
                     }
 
                     if (_states.ActiveLane == _laneDirection && _states.State != AccessUiState.AutomaticIdle)
@@ -357,11 +359,11 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
                 }
 
-                // Já liberou esta pessoa e ela ainda está na frente da câmera.
-                // Não abre o reconhecimento de novo — isso piscava a câmera e voltava ao descanso.
-                if (_latchedMemberId is not null)
+                // Quem acabou de entrar não libera de novo. Quem está atrás é reconhecido
+                // sem esperar a câmera ficar vazia.
+                if (await HoldForReleasedMemberAsync(ct).ConfigureAwait(false))
                 {
-                    await Task.Delay(200, ct).ConfigureAwait(false);
+                    await Task.Delay(160, ct).ConfigureAwait(false);
                     continue;
                 }
 
@@ -415,12 +417,13 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
 
 
-                FaceMatchResult? bestMatch = null;
-                var consensusHits = 0;
-                Guid? consensusMemberId = null;
+                FaceMatchResult? bestMatch = _primedMatch;
+                _primedMatch = null;
+                var consensusHits = bestMatch is null ? 0 : 2;
+                Guid? consensusMemberId = bestMatch?.MemberId;
                 const int requiredConsensus = 2;
 
-                for (var attempt = 0; attempt < _profile.IdentifyAttempts; attempt++)
+                for (var attempt = 0; attempt < _profile.IdentifyAttempts && consensusHits < requiredConsensus; attempt++)
                 {
                     if (!_mode.RecognitionEnabled)
                         break;
@@ -463,8 +466,9 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
                 if (consensusHits < requiredConsensus)
                     bestMatch = null;
 
-                if (bestMatch is not null && bestMatch.MemberId == _latchedMemberId)
+                if (bestMatch is not null && bestMatch.MemberId == _released.MemberId)
                 {
+                    _released.NoteStillPresent();
                     _sessions.CompleteSession();
                     if (_states.ActiveLane == _laneDirection)
                         _states.ResetAutomaticIdle(_laneDirection);
@@ -523,6 +527,22 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
                     || decision.MemberId is null && !decision.Allowed)
 
                 {
+
+                    if (_released.IsArmed)
+
+                    {
+
+                        _sessions.CompleteSession();
+
+                        if (_states.ActiveLane == _laneDirection)
+
+                            _states.ResetAutomaticIdle(_laneDirection);
+
+                        await Task.Delay(200, ct).ConfigureAwait(false);
+
+                        continue;
+
+                    }
 
                     _states.SetActiveLane(_laneDirection);
 
@@ -585,7 +605,7 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
                 _states.SetActiveLane(_laneDirection);
                 _releaseMessageShownUtc = DateTime.UtcNow;
                 if (decision.MemberId is { } releasedId)
-                    _latchedMemberId = releasedId;
+                    _released.Arm(releasedId);
 
                 var result = await _flow
                     .ProcessAuthorizedPassageAsync(
@@ -641,7 +661,7 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
                         await Task.Delay(_profile.PassageFailureDisplay, ct).ConfigureAwait(false);
                         // A pessoa não girou o braço. Solta o reconhecimento para a próxima
                         // aproximação — sem isso a tela de descanso ficava presa até ela sumir da câmera.
-                        _latchedMemberId = null;
+                        _released.Clear();
                         _faceAbsentSinceUtc = null;
                         _sessions.AllowImmediateRetry();
                     }
@@ -693,6 +713,46 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
     }
 
 
+
+    /// <summary>
+    /// True = continua na tela inicial. False = abre o reconhecimento da próxima pessoa.
+    /// </summary>
+    private async Task<bool> HoldForReleasedMemberAsync(CancellationToken ct)
+    {
+        if (!_released.IsArmed || _primedMatch is not null)
+            return false;
+
+        FaceMatchResult? other = null;
+        var decision = LatchDecision.Hold;
+        for (var i = 0; i < 3; i++)
+        {
+            FaceMatchResult? next = null;
+            var frame = _captureJpeg?.Invoke();
+            if (frame is { Length: >= 100 })
+            {
+                next = await _recognition
+                    .IdentifyOnlyAsync(frame, ct, _profile.FaceDetection)
+                    .ConfigureAwait(false);
+            }
+
+            decision = _released.Observe(next?.MemberId, DateTime.UtcNow);
+            if (decision == LatchDecision.Hold && next?.MemberId == _released.MemberId)
+                return true;
+
+            if (next is not null && next.MemberId != _released.MemberId)
+                other = next;
+
+            if (decision is LatchDecision.RecognizeOther or LatchDecision.OpenRecognition)
+                break;
+
+            await Task.Delay(90, ct).ConfigureAwait(false);
+        }
+
+        if (decision == LatchDecision.RecognizeOther)
+            _primedMatch = other;
+
+        return decision == LatchDecision.Hold;
+    }
 
     private string LaneUnknownMessage()
 
