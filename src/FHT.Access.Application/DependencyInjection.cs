@@ -46,6 +46,7 @@ public static class DependencyInjection
         services.AddSingleton<TurnstileConnectionSupervisor>();
 
         services.AddSingleton<AccessFlowService>();
+        services.AddSingleton<PinAccessService>();
 
         services.AddSingleton<DeviceService>();
 

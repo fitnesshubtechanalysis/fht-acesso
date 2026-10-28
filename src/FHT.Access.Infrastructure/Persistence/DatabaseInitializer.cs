@@ -210,6 +210,18 @@ public sealed class DatabaseInitializer
             await index.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        await using (var codes = connection.CreateCommand())
+        {
+            codes.CommandText = """
+                CREATE TABLE IF NOT EXISTS MemberAccessCodes (
+                    Code TEXT NOT NULL PRIMARY KEY,
+                    MemberId TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS IX_MemberAccessCodes_MemberId ON MemberAccessCodes(MemberId);
+                """;
+            await codes.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         await EnsureColumnAsync(connection, "AccessEvents", "AttemptId", "TEXT", cancellationToken)
             .ConfigureAwait(false);
         await EnsureColumnAsync(connection, "AccessEvents", "VisitId", "TEXT", cancellationToken)

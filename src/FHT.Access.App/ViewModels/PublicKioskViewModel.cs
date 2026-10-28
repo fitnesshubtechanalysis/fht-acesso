@@ -24,10 +24,13 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
     private readonly GateLaneEngineHost _gates;
     private readonly AppSettings _settings;
     private readonly UpdateService _updateService;
+    private readonly PinAccessService _pin;
     private readonly Dispatcher _dispatcher;
     private readonly DispatcherTimer _clockTimer;
     private readonly DispatcherTimer _idleSlideTimer;
     private bool _showAdvertiseSlide;
+    private bool _showKeypad;
+    private string _pinEntry = string.Empty;
 
     private BitmapSource? _preview;
     private AccessUiState _uiState = AccessUiState.AutomaticIdle;
@@ -51,13 +54,15 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
         AccessStateMachine states,
         GateLaneEngineHost gates,
         AppSettings settings,
-        UpdateService updateService)
+        UpdateService updateService,
+        PinAccessService pin)
     {
         _lanes = lanes;
         _states = states;
         _gates = gates;
         _settings = settings;
         _updateService = updateService;
+        _pin = pin;
         _dispatcher = System.Windows.Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
 
         _updateService.StateChanged += OnUpdateStateChanged;
@@ -77,6 +82,25 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
         OpenAttendantCommand = new RelayCommand(() => RequestAttendantFromKiosk?.Invoke(AttendantIntent.Browse));
         EmergencyReleaseCommand = new RelayCommand(() => RequestAttendantFromKiosk?.Invoke(AttendantIntent.ManualRelease));
         TryAgainCommand = new RelayCommand(() => _gates.RetryFromKiosk());
+        OpenKeypadCommand = new RelayCommand(() =>
+        {
+            PinEntry = string.Empty;
+            ShowKeypad = true;
+        });
+        CloseKeypadCommand = new RelayCommand(() => ShowKeypad = false);
+        PinDigitCommand = new RelayCommand(parameter =>
+        {
+            if (PinEntry.Length >= 6)
+                return;
+            PinEntry += parameter?.ToString() ?? string.Empty;
+        });
+        PinBackspaceCommand = new RelayCommand(() =>
+        {
+            if (PinEntry.Length == 0)
+                return;
+            PinEntry = PinEntry[..^1];
+        });
+        SubmitPinCommand = new AsyncRelayCommand(SubmitPinAsync);
 
         ApplyState(_states.State);
     }
@@ -88,6 +112,31 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
     public ICommand OpenAttendantCommand { get; }
     public ICommand EmergencyReleaseCommand { get; }
     public ICommand TryAgainCommand { get; }
+    public ICommand OpenKeypadCommand { get; }
+    public ICommand CloseKeypadCommand { get; }
+    public ICommand PinDigitCommand { get; }
+    public ICommand PinBackspaceCommand { get; }
+    public ICommand SubmitPinCommand { get; }
+
+    public bool ShowKeypad
+    {
+        get => _showKeypad;
+        private set => SetProperty(ref _showKeypad, value);
+    }
+
+    public string PinEntry
+    {
+        get => _pinEntry;
+        private set => SetProperty(ref _pinEntry, value);
+    }
+
+    private async Task SubmitPinAsync()
+    {
+        var code = PinEntry;
+        PinEntry = string.Empty;
+        ShowKeypad = false;
+        await _pin.SubmitAsync(code).ConfigureAwait(true);
+    }
 
     public BitmapSource? Preview
     {

@@ -9,6 +9,7 @@ public interface ITurnstile : IAsyncDisposable
 
     event EventHandler<TurnstileConnectionState>? StateChanged;
     event EventHandler<PassageOutcome>? PassageReceived;
+    event EventHandler<string>? KeypadCodeReceived;
 
     Task ConnectAsync(TurnstileConfig config, CancellationToken ct = default);
     Task DisconnectAsync(CancellationToken ct = default);

@@ -5,6 +5,7 @@ namespace FHT.Access.Domain.Abstractions;
 public interface IMemberRepository
 {
     Task<Member?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<Member?> GetByAccessCodeAsync(string code, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Member>> GetAllAsync(CancellationToken cancellationToken = default);
     Task UpsertAsync(Member member, CancellationToken cancellationToken = default);
     Task UpsertRangeAsync(IEnumerable<Member> members, CancellationToken cancellationToken = default);

@@ -124,8 +124,21 @@ public sealed class MemberSyncService
         RelationshipActionId = dto.RelationshipActionId,
         BypassPresence = dto.BypassPresence,
         PersonType = string.IsNullOrWhiteSpace(dto.PersonType) ? "customer" : dto.PersonType,
-        EmployeeId = dto.EmployeeId
+        EmployeeId = dto.EmployeeId,
+        AccessCodes = NormalizeCodes(dto)
     };
+
+    private static List<string> NormalizeCodes(MemberDto dto)
+    {
+        var raw = dto.AccessCodes?.ToList() ?? [];
+        if (!string.IsNullOrWhiteSpace(dto.AccessCode))
+            raw.Add(dto.AccessCode);
+        return raw
+            .Select(code => new string((code ?? string.Empty).Where(char.IsDigit).ToArray()))
+            .Where(code => code.Length == 6)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
 
     private static MemberStatus ParseStatus(string status)
     {

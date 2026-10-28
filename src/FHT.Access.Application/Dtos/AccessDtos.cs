@@ -26,7 +26,9 @@ public sealed record MemberDto(
     Guid? RelationshipActionId = null,
     bool BypassPresence = false,
     string PersonType = "customer",
-    Guid? EmployeeId = null);
+    Guid? EmployeeId = null,
+    string? AccessCode = null,
+    IReadOnlyList<string>? AccessCodes = null);
 
 public sealed record AccessEvaluateResultDto(
     string Kind,

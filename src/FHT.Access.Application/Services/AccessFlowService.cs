@@ -20,6 +20,7 @@ public sealed class AccessFlowService
 {
     public const string SourceFace = "face";
     public const string SourceManual = "manual";
+    public const string SourcePin = "pin";
 
     private readonly RecognitionService _recognition;
     private readonly AccessEventService _events;
@@ -79,7 +80,8 @@ public sealed class AccessFlowService
     public async Task<AccessFlowResult> ProcessDeniedOnlyAsync(
         AccessDecision decision,
         AccessDirection direction = AccessDirection.Entry,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? source = null)
     {
         if (decision.MemberId is { } mid && decision.Kind == AccessDecisionKind.RequireReception)
             await TryRecordBlockedAttemptAsync(mid, ct).ConfigureAwait(false);
@@ -87,7 +89,7 @@ public sealed class AccessFlowService
         var deniedEvent = await _events.RecordDeniedAsync(
             decision.MemberId,
             direction,
-            SourceFace,
+            string.IsNullOrWhiteSpace(source) ? SourceFace : source,
             DeviceId,
             denialReason: decision.ReasonCode,
             cancellationToken: ct).ConfigureAwait(false);

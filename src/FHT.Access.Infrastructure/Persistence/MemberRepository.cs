@@ -18,6 +18,24 @@ public sealed class MemberRepository : IMemberRepository
 
     public MemberRepository(SqliteConnectionFactory factory) => _factory = factory;
 
+    public async Task<Member?> GetByAccessCodeAsync(string code, CancellationToken cancellationToken = default)
+    {
+        var digits = DigitsOnly(code);
+        if (digits is null || digits.Length != 6)
+            return null;
+
+        await using var connection = await _factory.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT {SelectColumns}
+            FROM Members
+            WHERE Id = (SELECT MemberId FROM MemberAccessCodes WHERE Code = $code LIMIT 1);
+            """;
+        command.Parameters.AddWithValue("$code", digits);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? MapMember(reader) : null;
+    }
+
     public async Task<Member?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         await using var connection = await _factory.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -90,6 +108,7 @@ public sealed class MemberRepository : IMemberRepository
                 """;
             BindMember(command, member);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await ReplaceAccessCodesAsync(connection, tx, member, cancellationToken).ConfigureAwait(false);
         }
 
         await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -222,6 +241,36 @@ public sealed class MemberRepository : IMemberRepository
         command.CommandText = "DELETE FROM MemberFaces WHERE MemberId = $memberId;";
         command.Parameters.AddWithValue("$memberId", memberId.ToString("D"));
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task ReplaceAccessCodesAsync(
+        SqliteConnection connection,
+        SqliteTransaction tx,
+        Member member,
+        CancellationToken cancellationToken)
+    {
+        await using (var clear = connection.CreateCommand())
+        {
+            clear.Transaction = tx;
+            clear.CommandText = "DELETE FROM MemberAccessCodes WHERE MemberId = $id;";
+            clear.Parameters.AddWithValue("$id", member.Id.ToString("D"));
+            await clear.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        foreach (var code in member.AccessCodes.Distinct(StringComparer.Ordinal))
+        {
+            if (code.Length != 6)
+                continue;
+            await using var insert = connection.CreateCommand();
+            insert.Transaction = tx;
+            insert.CommandText = """
+                DELETE FROM MemberAccessCodes WHERE Code = $code;
+                INSERT INTO MemberAccessCodes (Code, MemberId) VALUES ($code, $id);
+                """;
+            insert.Parameters.AddWithValue("$code", code);
+            insert.Parameters.AddWithValue("$id", member.Id.ToString("D"));
+            await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private static void BindMember(SqliteCommand command, Member member)

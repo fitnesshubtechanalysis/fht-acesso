@@ -24,6 +24,9 @@ public sealed class FakeTurnstile : ITurnstile
 
     public event EventHandler<TurnstileConnectionState>? StateChanged;
     public event EventHandler<PassageOutcome>? PassageReceived;
+    public event EventHandler<string>? KeypadCodeReceived;
+
+    public void RaiseKeypad(string code) => KeypadCodeReceived?.Invoke(this, code);
 
     public Task ConnectAsync(TurnstileConfig config, CancellationToken ct = default)
     {

@@ -19,6 +19,7 @@ public sealed class TurnstileService : IAsyncDisposable
 
     public event EventHandler<TurnstileConnectionState>? StateChanged;
     public event EventHandler<PassageOutcome>? PassageReceived;
+    public event EventHandler<string>? KeypadCodeReceived;
 
     public Task ConnectAsync(TurnstileConfig config, CancellationToken cancellationToken = default)
         => _turnstile.ConnectAsync(config, cancellationToken);
@@ -106,6 +107,7 @@ public sealed class TurnstileService : IAsyncDisposable
         {
             _turnstile.StateChanged -= OnStateChanged;
             _turnstile.PassageReceived -= OnPassageReceived;
+            _turnstile.KeypadCodeReceived -= OnKeypadCodeReceived;
             _subscribed = false;
         }
 
@@ -121,6 +123,7 @@ public sealed class TurnstileService : IAsyncDisposable
 
         _turnstile.StateChanged += OnStateChanged;
         _turnstile.PassageReceived += OnPassageReceived;
+        _turnstile.KeypadCodeReceived += OnKeypadCodeReceived;
         _subscribed = true;
     }
 
@@ -129,4 +132,7 @@ public sealed class TurnstileService : IAsyncDisposable
 
     private void OnPassageReceived(object? sender, PassageOutcome outcome)
         => PassageReceived?.Invoke(this, outcome);
+
+    private void OnKeypadCodeReceived(object? sender, string code)
+        => KeypadCodeReceived?.Invoke(this, code);
 }

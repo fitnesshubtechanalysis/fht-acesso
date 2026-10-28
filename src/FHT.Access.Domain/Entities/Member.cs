@@ -30,4 +30,7 @@ public sealed class Member
     public string PersonType { get; set; } = "customer";
 
     public Guid? EmployeeId { get; set; }
+
+    /// <summary>Códigos de 6 dígitos (PIN + dia) que abrem este titular no cache local.</summary>
+    public List<string> AccessCodes { get; set; } = [];
 }

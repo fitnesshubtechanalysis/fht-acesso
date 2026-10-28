@@ -41,6 +41,7 @@ public sealed class ToletusLiteNetTurnstile : ITurnstile
 
     public event EventHandler<TurnstileConnectionState>? StateChanged;
     public event EventHandler<PassageOutcome>? PassageReceived;
+    public event EventHandler<string>? KeypadCodeReceived;
 
     public async Task ConnectAsync(TurnstileConfig config, CancellationToken ct = default)
     {
@@ -85,6 +86,7 @@ public sealed class ToletusLiteNetTurnstile : ITurnstile
 
             var board = LiteNet3Board.CreateFromBase(match);
             board.OnReleaseResponse = OnBoardReleaseResponse;
+            board.OnIdentification = OnBoardIdentification;
 
             // Preview the WS URI the vendor will open (port is private; log after connect via ServerUri).
             Log(
@@ -152,6 +154,7 @@ public sealed class ToletusLiteNetTurnstile : ITurnstile
         if (board is not null)
         {
             board.OnReleaseResponse = null;
+            board.OnIdentification = null;
             try
             {
                 board.Close();
@@ -313,6 +316,15 @@ public sealed class ToletusLiteNetTurnstile : ITurnstile
 
         if (State == TurnstileConnectionState.WaitingPassage)
             SetState(TurnstileConnectionState.Connected);
+    }
+
+    private void OnBoardIdentification(LiteNet3BoardBase board, CodeBase code)
+    {
+        var value = code.Code?.Trim();
+        if (string.IsNullOrEmpty(value))
+            return;
+        Log($"Keypad code length={value.Length}");
+        KeypadCodeReceived?.Invoke(this, value);
     }
 
     private void SetState(TurnstileConnectionState state)

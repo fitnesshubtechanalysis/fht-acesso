@@ -206,6 +206,8 @@ public partial class App : System.Windows.Application
 
             Boot("StartAutomaticEngine");
             StartAutomaticEngine();
+            Boot("PinAccess");
+            _services.GetRequiredService<PinAccessService>().Start();
 
             Boot("StartBackgroundSync");
             _services.GetRequiredService<BackgroundSyncService>().Start();

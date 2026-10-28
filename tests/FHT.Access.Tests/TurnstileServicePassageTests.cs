@@ -45,6 +45,7 @@ public class TurnstileServicePassageTests
         public TurnstileConnectionState State { get; private set; } = TurnstileConnectionState.Disconnected;
         public event EventHandler<TurnstileConnectionState>? StateChanged;
         public event EventHandler<PassageOutcome>? PassageReceived;
+        public event EventHandler<string>? KeypadCodeReceived;
 
         public Task ConnectAsync(TurnstileConfig config, CancellationToken ct = default)
         {
@@ -79,6 +80,7 @@ public class TurnstileServicePassageTests
         public TurnstileConnectionState State { get; private set; } = TurnstileConnectionState.Disconnected;
         public event EventHandler<TurnstileConnectionState>? StateChanged;
         public event EventHandler<PassageOutcome>? PassageReceived;
+        public event EventHandler<string>? KeypadCodeReceived;
 
         public void Raise(PassageOutcome outcome) => PassageReceived?.Invoke(this, outcome);
 
