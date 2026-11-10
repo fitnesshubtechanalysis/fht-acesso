@@ -1,5 +1,6 @@
 using FHT.Access.Application.Abstractions;
 using FHT.Access.Application.Dtos;
+using FHT.Access.Domain;
 using FHT.Access.Domain.Abstractions;
 using FHT.Access.Domain.Entities;
 using FHT.Access.Domain.Enums;
@@ -133,11 +134,7 @@ public sealed class MemberSyncService
         var raw = dto.AccessCodes?.ToList() ?? [];
         if (!string.IsNullOrWhiteSpace(dto.AccessCode))
             raw.Add(dto.AccessCode);
-        return raw
-            .Select(code => new string((code ?? string.Empty).Where(char.IsDigit).ToArray()))
-            .Where(code => code.Length == 6)
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
+        return AccessCodeRules.Normalize(raw);
     }
 
     private static MemberStatus ParseStatus(string status)

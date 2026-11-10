@@ -1,3 +1,4 @@
+using FHT.Access.Domain;
 using FHT.Access.Domain.Abstractions;
 using FHT.Access.Domain.Entities;
 using FHT.Access.Domain.Enums;
@@ -21,7 +22,7 @@ public sealed class MemberRepository : IMemberRepository
     public async Task<Member?> GetByAccessCodeAsync(string code, CancellationToken cancellationToken = default)
     {
         var digits = DigitsOnly(code);
-        if (digits is null || digits.Length != 6)
+        if (!AccessCodeRules.IsAccepted(digits))
             return null;
 
         await using var connection = await _factory.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -259,7 +260,7 @@ public sealed class MemberRepository : IMemberRepository
 
         foreach (var code in member.AccessCodes.Distinct(StringComparer.Ordinal))
         {
-            if (code.Length != 6)
+            if (!AccessCodeRules.IsAccepted(code))
                 continue;
             await using var insert = connection.CreateCommand();
             insert.Transaction = tx;

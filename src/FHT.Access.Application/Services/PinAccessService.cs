@@ -1,10 +1,11 @@
+using FHT.Access.Domain;
 using FHT.Access.Domain.Abstractions;
 using FHT.Access.Domain.Enums;
 
 namespace FHT.Access.Application.Services;
 
 /// <summary>
-/// Código de 6 dígitos no teclado do totem ou da placa. A decisão é a mesma da facial.
+/// Código de 4 ou 6 dígitos no teclado do totem ou da placa. A decisão é a mesma da facial.
 /// </summary>
 public sealed class PinAccessService
 {
@@ -14,8 +15,11 @@ public sealed class PinAccessService
     private readonly IMemberRepository _members;
     private readonly AccessStateMachine _states;
     private readonly TurnstileService _turnstile;
+    private static readonly TimeSpan ShortCodePause = TimeSpan.FromMilliseconds(1500);
     private readonly PinKeypadGuard _guard = new();
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly object _bufferGate = new();
+    private CancellationTokenSource? _shortCodeDelay;
     private string _buffer = string.Empty;
     private DateTime _bufferUtc = DateTime.MinValue;
     private bool _started;
@@ -47,39 +51,25 @@ public sealed class PinAccessService
     public void AcceptHardwareCode(string? raw)
     {
         var text = (raw ?? string.Empty).Trim();
-        var digits = Digits(text);
+        var digits = KeypadBuffer.Digits(text);
         var enter = text.Length > 0 && digits.Length == 0;
-        if (DateTime.UtcNow - _bufferUtc > TimeSpan.FromSeconds(8))
-            _buffer = string.Empty;
-
-        if (digits.Length >= 6)
+        KeypadBuffer.Step step;
+        lock (_bufferGate)
         {
-            _buffer = string.Empty;
-            _ = SubmitAsync(digits[^6..]);
-            return;
+            var expired = DateTime.UtcNow - _bufferUtc > TimeSpan.FromSeconds(8);
+            step = enter
+                ? KeypadBuffer.Confirm(_buffer)
+                : KeypadBuffer.Apply(_buffer, digits, expired);
+            _buffer = step.Buffer;
+            if (digits.Length > 0)
+                _bufferUtc = DateTime.UtcNow;
+            CancelShortCodeDelay();
+            if (step.WaitForMoreDigits)
+                ArmShortCodeDelay(_buffer);
         }
 
-        if (enter)
-        {
-            var full = _buffer;
-            _buffer = string.Empty;
-            _ = SubmitAsync(full);
-            return;
-        }
-
-        if (digits.Length == 0)
-            return;
-
-        _bufferUtc = DateTime.UtcNow;
-        _buffer += digits;
-        if (_buffer.Length > 6)
-            _buffer = _buffer[^6..];
-        if (_buffer.Length == 6)
-        {
-            var full = _buffer;
-            _buffer = string.Empty;
-            _ = SubmitAsync(full);
-        }
+        if (step.SubmitNow is not null)
+            _ = SubmitAsync(step.SubmitNow);
     }
 
     public async Task SubmitAsync(string? raw, CancellationToken cancellationToken = default)
@@ -102,13 +92,13 @@ public sealed class PinAccessService
                 return;
             }
 
-            var code = Digits(raw);
-            if (code.Length != 6)
+            var code = KeypadBuffer.Digits(raw);
+            if (!AccessCodeRules.IsAccepted(code))
             {
                 _guard.RegisterFailure(now);
                 await ShowTemporaryAsync(
                     AccessUiState.Denied,
-                    LockedOr("Digite os 6 números e confirme."),
+                    LockedOr("Digite os 4 ou 6 números e confirme."),
                     cancellationToken).ConfigureAwait(false);
                 return;
             }
@@ -217,6 +207,44 @@ public sealed class PinAccessService
 
     private void OnHardwareCode(object? sender, string code) => AcceptHardwareCode(code);
 
-    private static string Digits(string? raw)
-        => new((raw ?? string.Empty).Where(char.IsDigit).ToArray());
+    private void ArmShortCodeDelay(string code)
+    {
+        var cts = new CancellationTokenSource();
+        _shortCodeDelay = cts;
+        _ = SubmitShortCodeAfterPauseAsync(code, cts.Token);
+    }
+
+    private void CancelShortCodeDelay()
+    {
+        if (_shortCodeDelay is null)
+            return;
+        _shortCodeDelay.Cancel();
+        _shortCodeDelay.Dispose();
+        _shortCodeDelay = null;
+    }
+
+    private async Task SubmitShortCodeAfterPauseAsync(string code, CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(ShortCodePause, token).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            return;
+        }
+
+        var submit = false;
+        lock (_bufferGate)
+        {
+            if (_buffer != code)
+                return;
+            _buffer = string.Empty;
+            CancelShortCodeDelay();
+            submit = true;
+        }
+
+        if (submit)
+            await SubmitAsync(code).ConfigureAwait(false);
+    }
 }

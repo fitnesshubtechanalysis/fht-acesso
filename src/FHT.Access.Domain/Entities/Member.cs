@@ -31,6 +31,6 @@ public sealed class Member
 
     public Guid? EmployeeId { get; set; }
 
-    /// <summary>Códigos de 6 dígitos (PIN + dia) que abrem este titular no cache local.</summary>
+    /// <summary>Códigos de 4 ou 6 dígitos que abrem este titular no cache local.</summary>
     public List<string> AccessCodes { get; set; } = [];
 }
