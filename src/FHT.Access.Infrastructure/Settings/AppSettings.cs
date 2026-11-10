@@ -43,8 +43,8 @@ public sealed class AppSettings
     public int PassageReleaseMinDisplaySec { get; set; } = 3;
     public int RecognitionCooldownSec { get; set; } = 3;
     public int VisitMaxHours { get; set; } = 12;
-    /// <summary>Max confirmed entries inside EntryWindowMinutes (0 = unlimited). Default 2.</summary>
-    public int EntryMaxCount { get; set; } = 2;
+    /// <summary>0 = sem limite de reentrada. Código e facial não usam este teto.</summary>
+    public int EntryMaxCount { get; set; }
     /// <summary>Sliding window in minutes for re-entry tolerance. Default 5.</summary>
     public int EntryWindowMinutes { get; set; } = 5;
     public bool StartWithWindows { get; set; }

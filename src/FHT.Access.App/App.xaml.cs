@@ -176,11 +176,9 @@ public partial class App : System.Windows.Application
                 settings.RecognitionCooldownSec <= 0 ? 3 : settings.RecognitionCooldownSec);
             presence.StalePendingThreshold = flow.PassageTimeout + TimeSpan.FromSeconds(2);
             presence.VisitMaxDuration = TimeSpan.FromHours(settings.VisitMaxHours <= 0 ? 12 : settings.VisitMaxHours);
-            presence.EntryMaxCount = settings.EntryMaxCount < 0 ? 0 : settings.EntryMaxCount;
-            presence.EntryWindow = TimeSpan.FromMinutes(
-                settings.EntryWindowMinutes <= 0 ? 5 : settings.EntryWindowMinutes);
-            _logger?.Information(
-                $"Entry tolerance: max {presence.EntryMaxCount} in {presence.EntryWindow.TotalMinutes:0} min.");
+            presence.EntryMaxCount = 0;
+            presence.EntryWindow = TimeSpan.Zero;
+            _logger?.Information("Reentrada liberada para código e facial.");
 
             var attendantSession = _services.GetRequiredService<AttendantSessionService>();
             attendantSession.IdleTimeout = TimeSpan.FromMinutes(

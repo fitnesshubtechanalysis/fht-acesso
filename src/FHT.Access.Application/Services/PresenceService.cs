@@ -26,18 +26,17 @@ public sealed class PresenceService
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _personLocks = new();
     private readonly SemaphoreSlim _turnstileLock = new(1, 1);
     private readonly ConcurrentDictionary<Guid, DateTime> _cooldownUntil = new();
-    private readonly ConcurrentDictionary<Guid, List<DateTime>> _recentEntries = new();
 
     public TimeSpan RecognitionCooldown { get; set; } = TimeSpan.FromSeconds(3);
     /// <summary>Auto-clear stuck EntryPending/ExitPending (align with passage timeout).</summary>
     public TimeSpan StalePendingThreshold { get; set; } = TimeSpan.FromSeconds(12);
     public TimeSpan VisitMaxDuration { get; set; } = TimeSpan.FromHours(12);
 
-    /// <summary>Max confirmed entries inside <see cref="EntryWindow"/> (0 = unlimited).</summary>
-    public int EntryMaxCount { get; set; } = 2;
+    /// <summary>Mantido em 0: código e facial não limitam reentrada.</summary>
+    public int EntryMaxCount { get; set; }
 
-    /// <summary>Sliding window for re-entry tolerance (e.g. 2 entries / 5 minutes).</summary>
-    public TimeSpan EntryWindow { get; set; } = TimeSpan.FromMinutes(5);
+    /// <summary>Sem janela de reentrada. Código e facial podem entrar de novo na hora.</summary>
+    public TimeSpan EntryWindow { get; set; } = TimeSpan.Zero;
 
     /// <summary>Piloto: saída livre — presença estimada, sempre libera entrada.</summary>
     public bool EntryOnlyMode { get; set; } = true;
@@ -47,7 +46,6 @@ public sealed class PresenceService
 
     /// <summary>
     /// Piloto: catraca livre — facial registra entrada sem validar presença Inside/Outside.
-    /// Re-entry rate limit still applies (unless bypassPresence).
     /// </summary>
     public bool FreeGateMode { get; set; }
 
@@ -139,21 +137,6 @@ public sealed class PresenceService
                 if (!skipPresenceRules && DualGateMode && !EntryOnlyMode && p.State == PresenceStateKind.Unknown)
                     return (false, "Estado de presença indefinido — procure a recepção.");
 
-                // Re-entry tolerance: max N confirmed entries inside the sliding window.
-                var treatingAsEntry = EntryOnlyMode
-                    || forcedDirection == AccessDirection.Entry
-                    || (!DualGateMode && forcedDirection is null);
-                if (!bypassPresence
-                    && treatingAsEntry
-                    && EntryMaxCount > 0
-                    && EntryWindow > TimeSpan.Zero
-                    && CountRecentEntries(personId) >= EntryMaxCount)
-                {
-                    return (
-                        false,
-                        $"Entrada recente demais — aguarde {Math.Max(1, (int)EntryWindow.TotalMinutes)} min ou procure a recepção.");
-                }
-
                 if (!await _turnstileLock.WaitAsync(0, ct).ConfigureAwait(false))
                     return (false, "Catraca aguardando passagem.");
 
@@ -162,33 +145,6 @@ public sealed class PresenceService
         finally
         {
             _personLocks.GetOrAdd(personId, _ => new SemaphoreSlim(1, 1)).Release();
-        }
-    }
-
-    private int CountRecentEntries(Guid personId)
-    {
-        if (!_recentEntries.TryGetValue(personId, out var list) || list.Count == 0)
-            return 0;
-
-        var cutoff = DateTime.UtcNow - EntryWindow;
-        lock (list)
-        {
-            list.RemoveAll(t => t < cutoff);
-            return list.Count;
-        }
-    }
-
-    private void RecordConfirmedEntry(Guid personId)
-    {
-        if (EntryMaxCount <= 0 || EntryWindow <= TimeSpan.Zero)
-            return;
-
-        var list = _recentEntries.GetOrAdd(personId, _ => []);
-        lock (list)
-        {
-            var cutoff = DateTime.UtcNow - EntryWindow;
-            list.RemoveAll(t => t < cutoff);
-            list.Add(DateTime.UtcNow);
         }
     }
 
@@ -335,7 +291,6 @@ public sealed class PresenceService
                 attempt, AccessEventStatus.Allowed, true, source, deviceId, visitId, ct)
                 .ConfigureAwait(false);
 
-            RecordConfirmedEntry(attempt.PersonId);
         }
         else
         {

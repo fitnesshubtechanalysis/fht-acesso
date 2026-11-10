@@ -98,10 +98,8 @@ public sealed class RemoteConfigApplier : IRemoteConfigApplier
             _settings.CameraFlipVertical = cfv;
         if (config.CameraRotateDegrees is int rot)
             _settings.CameraRotateDegrees = rot;
-        if (config.EntryMaxCount is int emc && emc >= 0)
-            _settings.EntryMaxCount = emc;
-        if (config.EntryWindowMinutes is int ewm && ewm > 0)
-            _settings.EntryWindowMinutes = ewm;
+        _settings.EntryMaxCount = 0;
+        _settings.EntryWindowMinutes = 0;
     }
 
     private void ApplyRuntime()
@@ -115,9 +113,8 @@ public sealed class RemoteConfigApplier : IRemoteConfigApplier
         _presence.StalePendingThreshold = _flow.PassageTimeout + TimeSpan.FromSeconds(2);
         _presence.VisitMaxDuration = TimeSpan.FromHours(
             _settings.VisitMaxHours <= 0 ? 12 : _settings.VisitMaxHours);
-        _presence.EntryMaxCount = _settings.EntryMaxCount < 0 ? 0 : _settings.EntryMaxCount;
-        _presence.EntryWindow = TimeSpan.FromMinutes(
-            _settings.EntryWindowMinutes <= 0 ? 5 : _settings.EntryWindowMinutes);
+        _presence.EntryMaxCount = 0;
+        _presence.EntryWindow = TimeSpan.Zero;
 
         // Exit is free + silent observation only — never dual-gate the turnstile/UI.
         _flow.EntryOnlyMode = true;

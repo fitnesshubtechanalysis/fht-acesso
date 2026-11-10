@@ -128,7 +128,7 @@ public sealed class PresenceServiceTests
     }
 
     [Fact]
-    public async Task Entry_rate_limit_blocks_third_entry_inside_window()
+    public async Task Repeated_entries_stay_allowed_for_face_and_pin()
     {
         var personId = Guid.NewGuid();
         var unitId = "unit-1";
@@ -206,9 +206,9 @@ public sealed class PresenceServiceTests
             await svc.ConfirmPassageAsync(plan!.AttemptId, true, "face", null);
         }
 
-        var (blocked, reason) = await svc.TryBeginRecognitionAsync(personId, unitId, AccessDirection.Entry);
-        Assert.False(blocked);
-        Assert.Contains("Entrada recente demais", reason);
+        var (again, reason) = await svc.TryBeginRecognitionAsync(personId, unitId, AccessDirection.Entry);
+        Assert.True(again);
+        Assert.Null(reason);
     }
 
     [Fact]
