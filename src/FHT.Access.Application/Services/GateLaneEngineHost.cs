@@ -12,6 +12,7 @@ public sealed class GateLaneEngineHost : IAsyncDisposable
     private readonly CameraCoordinator _camera;
     private readonly RecognitionService _recognition;
     private readonly AccessFlowService _flow;
+    private readonly ReleasedMemberLatch _entryLatch;
 
     private readonly RecognitionSessionGuard _entrySessions = new();
     private readonly RecognitionSessionGuard _exitSessions = new();
@@ -25,13 +26,15 @@ public sealed class GateLaneEngineHost : IAsyncDisposable
         AccessStateMachine states,
         CameraCoordinator camera,
         RecognitionService recognition,
-        AccessFlowService flow)
+        AccessFlowService flow,
+        ReleasedMemberLatch entryLatch)
     {
         _mode = mode;
         _states = states;
         _camera = camera;
         _recognition = recognition;
         _flow = flow;
+        _entryLatch = entryLatch;
     }
 
     public AutomaticAccessEngine EntryEngine => _entryEngine
@@ -113,5 +116,6 @@ public sealed class GateLaneEngineHost : IAsyncDisposable
             _recognition,
             _flow,
             direction,
-            cameraOwner);
+            cameraOwner,
+            released: direction == AccessDirection.Entry ? _entryLatch : new ReleasedMemberLatch());
 }

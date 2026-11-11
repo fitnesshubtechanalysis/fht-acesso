@@ -74,10 +74,10 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
     private DateTime _releaseMessageShownUtc;
 
     /// <summary>
-    /// Aluno que acabou de ser liberado. Não abre de novo enquanto o rosto
-    /// não sair da câmera — frame preso ou fundo vazio não vira outra entrada.
+    /// Quem acabou de passar. A mesma pessoa ainda pode entrar mais uma vez.
+    /// Depois disso a câmera espera o rosto sair, para não pulsar a catraca sem parar.
     /// </summary>
-    private readonly ReleasedMemberLatch _released = new();
+    private readonly ReleasedMemberLatch _released;
 
     private FaceMatchResult? _primedMatch;
 
@@ -113,7 +113,8 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
         AccessDirection laneDirection = AccessDirection.Entry,
         string? cameraOwner = null,
         LaneRecognitionProfile? profile = null,
-        ILogger<AutomaticAccessEngine>? logger = null)
+        ILogger<AutomaticAccessEngine>? logger = null,
+        ReleasedMemberLatch? released = null)
     {
         _mode = mode;
 
@@ -136,6 +137,8 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
             : LaneRecognitionProfile.Entry);
 
         _logger = logger;
+
+        _released = released ?? new ReleasedMemberLatch();
 
         _mode.ModeChanged += OnModeChanged;
 
@@ -359,8 +362,7 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
 
                 }
 
-                // Quem acabou de entrar não libera de novo. Quem está atrás é reconhecido
-                // sem esperar a câmera ficar vazia.
+                // A mesma pessoa pode entrar mais uma vez. Quem está atrás não espera a câmera vazia.
                 if (await HoldForReleasedMemberAsync(ct).ConfigureAwait(false))
                 {
                     await Task.Delay(160, ct).ConfigureAwait(false);
@@ -466,7 +468,9 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
                 if (consensusHits < requiredConsensus)
                     bestMatch = null;
 
-                if (bestMatch is not null && bestMatch.MemberId == _released.MemberId)
+                if (bestMatch is not null
+                    && bestMatch.MemberId == _released.MemberId
+                    && !_released.SamePersonMayEnterAgain)
                 {
                     _released.NoteStillPresent();
                     _sessions.CompleteSession();
@@ -736,6 +740,8 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
             }
 
             decision = _released.Observe(next?.MemberId, DateTime.UtcNow);
+            if (decision == LatchDecision.RecognizeSame)
+                return false;
             if (decision == LatchDecision.Hold && next?.MemberId == _released.MemberId)
                 return true;
 

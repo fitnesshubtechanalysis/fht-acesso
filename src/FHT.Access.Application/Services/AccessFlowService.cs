@@ -127,8 +127,9 @@ public sealed class AccessFlowService
         var member = await _members.GetByIdAsync(memberId, ct).ConfigureAwait(false);
         var bypassPresence = member?.BypassPresence == true;
 
+        var codeIsANewRequest = string.Equals(source, SourcePin, StringComparison.OrdinalIgnoreCase);
         var (allowed, blockReason) = await _presence
-            .TryBeginRecognitionAsync(memberId, UnitId, direction, bypassPresence, ct)
+            .TryBeginRecognitionAsync(memberId, UnitId, direction, bypassPresence, codeIsANewRequest, ct)
             .ConfigureAwait(false);
 
         if (!allowed)

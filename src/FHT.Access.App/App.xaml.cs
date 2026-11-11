@@ -172,8 +172,7 @@ public partial class App : System.Windows.Application
                 _logger?.Information(
                     "FreeGateMode=ON — facial registra entrada sem validar presença (piloto catraca livre).");
             }
-            presence.RecognitionCooldown = TimeSpan.FromSeconds(
-                settings.RecognitionCooldownSec <= 0 ? 3 : settings.RecognitionCooldownSec);
+            presence.RecognitionCooldown = TimeSpan.Zero;
             presence.StalePendingThreshold = flow.PassageTimeout + TimeSpan.FromSeconds(2);
             presence.VisitMaxDuration = TimeSpan.FromHours(settings.VisitMaxHours <= 0 ? 12 : settings.VisitMaxHours);
             presence.EntryMaxCount = 0;

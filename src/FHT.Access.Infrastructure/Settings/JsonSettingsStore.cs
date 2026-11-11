@@ -286,7 +286,7 @@ public sealed class JsonSettingsStore : ISettingsStore
             PassageTimeoutSec = 15,
             PassageSuccessDisplaySec = 5,
             PassageReleaseMinDisplaySec = 3,
-            RecognitionCooldownSec = 3,
+            RecognitionCooldownSec = 0,
             VisitMaxHours = 12,
             StartupDelaySec = 8,
             StartWithWindows = true,

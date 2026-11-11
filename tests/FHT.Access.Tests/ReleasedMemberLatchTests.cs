@@ -9,13 +9,39 @@ public class ReleasedMemberLatchTests
     private static readonly DateTime T0 = new(2026, 10, 15, 14, 0, 0, DateTimeKind.Utc);
 
     [Fact]
-    public void Same_person_stays_on_the_idle_screen()
+    public void Same_person_may_open_once_more_while_still_in_frame()
     {
         var latch = new ReleasedMemberLatch();
         latch.Arm(Released);
 
-        Assert.Equal(LatchDecision.Hold, latch.Observe(Released, T0));
+        Assert.Equal(LatchDecision.RecognizeSame, latch.Observe(Released, T0));
+
+        latch.Arm(Released);
         Assert.Equal(LatchDecision.Hold, latch.Observe(Released, T0.AddSeconds(3)));
+    }
+
+    [Fact]
+    public void Leaving_the_frame_allows_another_opening()
+    {
+        var latch = new ReleasedMemberLatch();
+        latch.Arm(Released);
+        latch.Arm(Released);
+        latch.Clear();
+        latch.Arm(Released);
+
+        Assert.Equal(LatchDecision.RecognizeSame, latch.Observe(Released, T0));
+    }
+
+    [Fact]
+    public void A_typed_code_uses_the_extra_opening()
+    {
+        var latch = new ReleasedMemberLatch();
+        latch.Arm(Released);
+        latch.ParkCode();
+        Assert.Equal(LatchDecision.Hold, latch.Observe(Released, T0));
+
+        latch.NoteCodeUsed(Released);
+        Assert.Equal(LatchDecision.Hold, latch.Observe(Released, T0.AddSeconds(1)));
     }
 
     [Fact]
@@ -44,6 +70,7 @@ public class ReleasedMemberLatchTests
     public void Seeing_the_released_person_again_restarts_the_wait()
     {
         var latch = new ReleasedMemberLatch();
+        latch.Arm(Released);
         latch.Arm(Released);
 
         latch.Observe(null, T0);

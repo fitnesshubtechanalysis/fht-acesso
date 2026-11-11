@@ -76,8 +76,7 @@ public sealed class RemoteConfigApplier : IRemoteConfigApplier
             _settings.PassageSuccessDisplaySec = psd;
         if (config.PassageReleaseMinDisplaySec is int prd && prd >= 0)
             _settings.PassageReleaseMinDisplaySec = prd;
-        if (config.RecognitionCooldownSec is int rcs && rcs >= 0)
-            _settings.RecognitionCooldownSec = rcs;
+        _settings.RecognitionCooldownSec = 0;
         if (config.VisitMaxHours is int vmh && vmh > 0)
             _settings.VisitMaxHours = vmh;
         if (config.FaceMatchThreshold is double fmt && fmt > 0)
@@ -108,8 +107,7 @@ public sealed class RemoteConfigApplier : IRemoteConfigApplier
         _presence.FreeGateMode = _settings.FreeGateMode;
         _flow.PassageTimeout = TimeSpan.FromSeconds(
             _settings.PassageTimeoutSec <= 0 ? 10 : _settings.PassageTimeoutSec);
-        _presence.RecognitionCooldown = TimeSpan.FromSeconds(
-            _settings.RecognitionCooldownSec <= 0 ? 3 : _settings.RecognitionCooldownSec);
+        _presence.RecognitionCooldown = TimeSpan.Zero;
         _presence.StalePendingThreshold = _flow.PassageTimeout + TimeSpan.FromSeconds(2);
         _presence.VisitMaxDuration = TimeSpan.FromHours(
             _settings.VisitMaxHours <= 0 ? 12 : _settings.VisitMaxHours);

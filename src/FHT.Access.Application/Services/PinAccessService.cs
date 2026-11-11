@@ -15,6 +15,7 @@ public sealed class PinAccessService
     private readonly IMemberRepository _members;
     private readonly AccessStateMachine _states;
     private readonly TurnstileService _turnstile;
+    private readonly ReleasedMemberLatch _released;
     private static readonly TimeSpan ShortCodePause = TimeSpan.FromMilliseconds(1500);
     private readonly PinKeypadGuard _guard = new();
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -22,6 +23,8 @@ public sealed class PinAccessService
     private CancellationTokenSource? _shortCodeDelay;
     private string _buffer = string.Empty;
     private DateTime _bufferUtc = DateTime.MinValue;
+    private string? _pendingCode;
+    private int _flushing;
     private bool _started;
 
     public PinAccessService(
@@ -30,7 +33,8 @@ public sealed class PinAccessService
         AccessEventService events,
         IMemberRepository members,
         AccessStateMachine states,
-        TurnstileService turnstile)
+        TurnstileService turnstile,
+        ReleasedMemberLatch released)
     {
         _flow = flow;
         _decisions = decisions;
@@ -38,6 +42,7 @@ public sealed class PinAccessService
         _members = members;
         _states = states;
         _turnstile = turnstile;
+        _released = released;
     }
 
     public void Start()
@@ -74,13 +79,26 @@ public sealed class PinAccessService
 
     public async Task SubmitAsync(string? raw, CancellationToken cancellationToken = default)
     {
-        if (!await _gate.WaitAsync(0, cancellationToken).ConfigureAwait(false))
+        var submitted = KeypadBuffer.Digits(raw);
+        if (AccessCodeRules.IsAccepted(submitted) && !CanInterrupt())
+        {
+            ParkUntilFree(submitted);
             return;
+        }
+
+        if (!await _gate.WaitAsync(0, cancellationToken).ConfigureAwait(false))
+        {
+            ParkUntilFree(submitted);
+            return;
+        }
 
         try
         {
             if (!CanInterrupt())
+            {
+                ParkUntilFree(submitted);
                 return;
+            }
 
             var now = DateTime.UtcNow;
             if (_guard.IsLocked(now))
@@ -106,6 +124,7 @@ public sealed class PinAccessService
             var member = await _members.GetByAccessCodeAsync(code, cancellationToken).ConfigureAwait(false);
             if (member is null)
             {
+                _released.ClearParkedCode();
                 _guard.RegisterFailure(DateTime.UtcNow);
                 await _events.RecordDeniedAsync(
                     null,
@@ -122,6 +141,7 @@ public sealed class PinAccessService
             }
 
             _guard.RegisterSuccess();
+            _released.ClearParkedCode();
             var decision = _decisions.Decide(member);
             if (!decision.AllowAutomaticRelease)
             {
@@ -138,6 +158,9 @@ public sealed class PinAccessService
                     decision.MemberId).ConfigureAwait(false);
                 return;
             }
+
+            if (decision.MemberId is { } notedId)
+                _released.NoteCodeUsed(notedId);
 
             _states.SetActiveLane(AccessDirection.Entry);
             _states.TransitionTo(
@@ -189,6 +212,82 @@ public sealed class PinAccessService
     private bool CanInterrupt()
     {
         return _states.State is AccessUiState.AutomaticIdle or AccessUiState.Unknown or AccessUiState.Denied;
+    }
+
+    /// <summary>
+    /// Código digitado enquanto a catraca ainda espera a passagem anterior.
+    /// Guarda e libera assim que a tela volta, em vez de ignorar.
+    /// </summary>
+    private void ParkUntilFree(string code)
+    {
+        if (!AccessCodeRules.IsAccepted(code))
+            return;
+        lock (_bufferGate)
+            _pendingCode = code;
+        _released.ParkCode();
+        if (Interlocked.CompareExchange(ref _flushing, 1, 0) != 0)
+            return;
+        _ = FlushParkedCodeAsync();
+    }
+
+    private async Task FlushParkedCodeAsync()
+    {
+        try
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(25);
+            while (DateTime.UtcNow < deadline)
+            {
+                string? code;
+                lock (_bufferGate)
+                    code = _pendingCode;
+                if (code is null)
+                    return;
+
+                if (CanInterrupt() && await _gate.WaitAsync(0).ConfigureAwait(false))
+                {
+                    var ready = false;
+                    try
+                    {
+                        if (CanInterrupt())
+                        {
+                            lock (_bufferGate)
+                            {
+                                if (_pendingCode == code)
+                                {
+                                    _pendingCode = null;
+                                    ready = true;
+                                }
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        _gate.Release();
+                    }
+
+                    if (ready)
+                    {
+                        await SubmitAsync(code).ConfigureAwait(false);
+                        return;
+                    }
+                }
+
+                await Task.Delay(200).ConfigureAwait(false);
+            }
+
+            lock (_bufferGate)
+                _pendingCode = null;
+            _released.ClearParkedCode();
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _flushing, 0);
+            string? left;
+            lock (_bufferGate)
+                left = _pendingCode;
+            if (left is not null)
+                ParkUntilFree(left);
+        }
     }
 
     private async Task ShowTemporaryAsync(

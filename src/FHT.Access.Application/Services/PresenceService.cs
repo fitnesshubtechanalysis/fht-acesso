@@ -27,7 +27,7 @@ public sealed class PresenceService
     private readonly SemaphoreSlim _turnstileLock = new(1, 1);
     private readonly ConcurrentDictionary<Guid, DateTime> _cooldownUntil = new();
 
-    public TimeSpan RecognitionCooldown { get; set; } = TimeSpan.FromSeconds(3);
+    public TimeSpan RecognitionCooldown { get; set; } = TimeSpan.Zero;
     /// <summary>Auto-clear stuck EntryPending/ExitPending (align with passage timeout).</summary>
     public TimeSpan StalePendingThreshold { get; set; } = TimeSpan.FromSeconds(12);
     public TimeSpan VisitMaxDuration { get; set; } = TimeSpan.FromHours(12);
@@ -93,6 +93,7 @@ public sealed class PresenceService
         string unitId,
         AccessDirection? forcedDirection = null,
         bool bypassPresence = false,
+        bool ignoreCooldown = false,
         CancellationToken ct = default)
     {
         var gate = await _personLocks.GetOrAdd(personId, _ => new SemaphoreSlim(1, 1))
@@ -102,7 +103,9 @@ public sealed class PresenceService
 
         try
             {
-                if (_cooldownUntil.TryGetValue(personId, out var until) && until > DateTime.UtcNow)
+                if (!ignoreCooldown
+                    && _cooldownUntil.TryGetValue(personId, out var until)
+                    && until > DateTime.UtcNow)
                     return (false, "Aguarde alguns segundos e tente de novo.");
 
                 var p = await GetOrCreateAsync(personId, unitId, ct).ConfigureAwait(false);

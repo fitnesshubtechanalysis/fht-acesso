@@ -41,7 +41,7 @@ public sealed class AppSettings
     public int PassageSuccessDisplaySec { get; set; } = 5;
     /// <summary>Minimum seconds for "Pode passar na catraca/saída" (default 3).</summary>
     public int PassageReleaseMinDisplaySec { get; set; } = 3;
-    public int RecognitionCooldownSec { get; set; } = 3;
+    public int RecognitionCooldownSec { get; set; }
     public int VisitMaxHours { get; set; } = 12;
     /// <summary>0 = sem limite de reentrada. Código e facial não usam este teto.</summary>
     public int EntryMaxCount { get; set; }

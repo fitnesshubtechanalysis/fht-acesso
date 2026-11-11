@@ -45,6 +45,7 @@ public static class DependencyInjection
 
         services.AddSingleton<TurnstileConnectionSupervisor>();
 
+        services.AddSingleton<ReleasedMemberLatch>();
         services.AddSingleton<AccessFlowService>();
         services.AddSingleton<PinAccessService>();
 
