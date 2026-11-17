@@ -332,7 +332,11 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
                         _released.Clear();
                     }
 
-                    if (_states.ActiveLane == _laneDirection && _states.State != AccessUiState.AutomaticIdle)
+                    // Resultado de código ou facial fica até o próprio fluxo encerrar.
+                    // Sem rosto, só some o reconhecimento que ainda não decidiu.
+                    if (_states.ActiveLane == _laneDirection
+                        && _states.State != AccessUiState.AutomaticIdle
+                        && !HoldsResultOnScreen(_states.State))
 
                         _states.ResetAutomaticIdle(_laneDirection);
 
@@ -372,6 +376,12 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
                 if (!_states.CanLaneTakeUi(_laneDirection))
                 {
                     await Task.Delay(100, ct).ConfigureAwait(false);
+                    continue;
+                }
+
+                if (_states.ActiveLane == _laneDirection && HoldsResultOnScreen(_states.State))
+                {
+                    await Task.Delay(120, ct).ConfigureAwait(false);
                     continue;
                 }
 
@@ -717,6 +727,14 @@ public sealed class AutomaticAccessEngine : IAsyncDisposable
     }
 
 
+
+    /// <summary>Erro, liberação e confirmação permanecem até o fluxo que os mostrou terminar.</summary>
+    private static bool HoldsResultOnScreen(AccessUiState state) =>
+        state is AccessUiState.Denied
+            or AccessUiState.Unknown
+            or AccessUiState.Authorized
+            or AccessUiState.WaitingPassage
+            or AccessUiState.PassageConfirmed;
 
     /// <summary>
     /// True = continua na tela inicial. False = abre o reconhecimento da próxima pessoa.

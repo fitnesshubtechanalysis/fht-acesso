@@ -19,6 +19,10 @@
   <ItemGroup>
     <Resource Include="Assets\logo-fht-acesso.png" />
     <Resource Include="Assets\propaganda-idle.png" />
+    <Resource Include="Assets\propaganda-arquitetura.png" />
+    <Resource Include="Assets\propaganda-otorrino.png" />
+    <Resource Include="Assets\propaganda-attive.png" />
+    <Resource Include="Assets\propaganda-silvana.png" />
     <Resource Include="Assets\tray-icon.png" />
     <Resource Include="Assets\app.ico" />
     <Resource Include="Assets\unknown-silhouette.png" />
@@ -48,9 +52,9 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <!-- Versao semantica - incrementar a cada release. -->
-    <Version>1.0.31</Version>
-    <AssemblyVersion>1.0.31.0</AssemblyVersion>
-    <FileVersion>1.0.31.0</FileVersion>
+    <Version>1.0.32</Version>
+    <AssemblyVersion>1.0.32.0</AssemblyVersion>
+    <FileVersion>1.0.32.0</FileVersion>
     <Product>FHT Acesso</Product>
     <Company>FitnessHub Tech</Company>
     <!-- Program.cs fornece o Main explícito exigido pelo Velopack. -->

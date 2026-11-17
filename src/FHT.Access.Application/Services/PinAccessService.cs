@@ -17,6 +17,8 @@ public sealed class PinAccessService
     private readonly TurnstileService _turnstile;
     private readonly ReleasedMemberLatch _released;
     private static readonly TimeSpan ShortCodePause = TimeSpan.FromMilliseconds(1500);
+    private static readonly TimeSpan ErrorOnScreen = TimeSpan.FromSeconds(6);
+    private static readonly TimeSpan ConfirmationOnScreen = TimeSpan.FromSeconds(5);
     private readonly PinKeypadGuard _guard = new();
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly object _bufferGate = new();
@@ -193,7 +195,7 @@ public sealed class PinAccessService
                 confirmed ? "Entrada registrada" : result.UiMessage,
                 decision.MemberName,
                 decision.MemberId);
-            await Task.Delay(TimeSpan.FromSeconds(confirmed ? 2.5 : 3), cancellationToken).ConfigureAwait(false);
+            await Task.Delay(confirmed ? ConfirmationOnScreen : ErrorOnScreen, cancellationToken).ConfigureAwait(false);
             _states.ResetAutomaticIdle(AccessDirection.Entry);
         }
         finally
@@ -299,7 +301,7 @@ public sealed class PinAccessService
     {
         _states.SetActiveLane(AccessDirection.Entry);
         _states.TransitionTo(state, message, name, memberId);
-        await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken).ConfigureAwait(false);
+        await Task.Delay(ErrorOnScreen, cancellationToken).ConfigureAwait(false);
         if (_states.State == state)
             _states.ResetAutomaticIdle(AccessDirection.Entry);
     }

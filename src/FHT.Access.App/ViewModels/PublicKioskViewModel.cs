@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using FHT.Access.App.Services;
@@ -28,7 +29,19 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
     private readonly Dispatcher _dispatcher;
     private readonly DispatcherTimer _clockTimer;
     private readonly DispatcherTimer _idleSlideTimer;
-    private bool _showAdvertiseSlide;
+    /// <summary>URI vazio é a chamada "Anuncie aqui", não um cartaz.</summary>
+    private static readonly string[] IdlePosterUris =
+    {
+        "pack://application:,,,/Assets/propaganda-idle.png",
+        "pack://application:,,,/Assets/propaganda-arquitetura.png",
+        "pack://application:,,,/Assets/propaganda-otorrino.png",
+        "pack://application:,,,/Assets/propaganda-attive.png",
+        "pack://application:,,,/Assets/propaganda-silvana.png",
+        "",
+    };
+    private int _idlePosterIndex;
+    private ImageSource? _idlePoster;
+    private readonly AsyncRelayCommand _submitPinCommand;
     private bool _showKeypad;
     private string _pinEntry = string.Empty;
 
@@ -71,6 +84,7 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
         _clockTimer.Tick += (_, _) => RefreshClock();
         _idleSlideTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(12) };
         _idleSlideTimer.Tick += (_, _) => AdvanceIdleSlide();
+        ShowIdlePoster(0);
         RefreshClock();
         RefreshOnlineStatus();
 
@@ -100,7 +114,7 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
                 return;
             PinEntry = PinEntry[..^1];
         });
-        SubmitPinCommand = new AsyncRelayCommand(SubmitPinAsync);
+        _submitPinCommand = new AsyncRelayCommand(SubmitPinAsync, () => PinEntry.Length is 4 or 6);
 
         ApplyState(_states.State);
     }
@@ -116,7 +130,7 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
     public ICommand CloseKeypadCommand { get; }
     public ICommand PinDigitCommand { get; }
     public ICommand PinBackspaceCommand { get; }
-    public ICommand SubmitPinCommand { get; }
+    public ICommand SubmitPinCommand => _submitPinCommand;
 
     public bool ShowKeypad
     {
@@ -127,7 +141,24 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
     public string PinEntry
     {
         get => _pinEntry;
-        private set => SetProperty(ref _pinEntry, value);
+        private set
+        {
+            if (!SetProperty(ref _pinEntry, value))
+                return;
+            OnPropertyChanged(nameof(PinSlots));
+            _submitPinCommand.RaiseCanExecuteChanged();
+        }
+    }
+
+    public IReadOnlyList<PinSlotView> PinSlots
+    {
+        get
+        {
+            var slots = new PinSlotView[6];
+            for (var i = 0; i < slots.Length; i++)
+                slots[i] = new PinSlotView(i < _pinEntry.Length ? _pinEntry[i].ToString() : string.Empty);
+            return slots;
+        }
     }
 
     private async Task SubmitPinAsync()
@@ -176,18 +207,18 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
 
     public string IdleMessage => IdleHeadline;
 
-    public bool ShowAdvertiseSlide
+    public ImageSource? IdlePoster
     {
-        get => _showAdvertiseSlide;
-        private set
-        {
-            if (!SetProperty(ref _showAdvertiseSlide, value))
-                return;
-            OnPropertyChanged(nameof(ShowBrandSlide));
-        }
+        get => _idlePoster;
+        private set => SetProperty(ref _idlePoster, value);
     }
 
-    public bool ShowBrandSlide => !ShowAdvertiseSlide;
+    public bool ShowAdvertiseSlide =>
+        _idlePosterIndex >= 0
+        && _idlePosterIndex < IdlePosterUris.Length
+        && IdlePosterUris[_idlePosterIndex].Length == 0;
+
+    public bool ShowPosterSlide => !ShowAdvertiseSlide;
 
     public string AppVersionLabel => "v" + _updateService.CurrentVersion;
 
@@ -355,6 +386,8 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
     private void ApplyState(AccessUiState state)
     {
         UiState = state;
+        if (state != AccessUiState.AutomaticIdle)
+            ShowKeypad = false;
         MemberName = ShowsRecognizedName(state) ? _states.MemberDisplayName ?? string.Empty : string.Empty;
         ResultMessage = BuildResultMessage(state, _states.StatusMessage, MemberName, _states.ActiveLane);
     }
@@ -402,7 +435,26 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
     {
         if (!IsIdle)
             return;
-        ShowAdvertiseSlide = !ShowAdvertiseSlide;
+        ShowIdlePoster((_idlePosterIndex + 1) % IdlePosterUris.Length);
+    }
+
+    private void ShowIdlePoster(int index)
+    {
+        _idlePosterIndex = index;
+        var uri = IdlePosterUris[index];
+        if (uri.Length > 0)
+        {
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.UriSource = new Uri(uri, UriKind.Absolute);
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.EndInit();
+            image.Freeze();
+            IdlePoster = image;
+        }
+
+        OnPropertyChanged(nameof(ShowAdvertiseSlide));
+        OnPropertyChanged(nameof(ShowPosterSlide));
     }
 
     private void RefreshClock()
@@ -421,4 +473,13 @@ public sealed class PublicKioskViewModel : ViewModelBase, IDisposable
         var bitmap = e.Bitmap;
         _ = _dispatcher.BeginInvoke(() => Preview = bitmap);
     }
+}
+
+public sealed class PinSlotView
+{
+    public PinSlotView(string digit) => Digit = digit;
+
+    public string Digit { get; }
+
+    public bool Filled => Digit.Length > 0;
 }
