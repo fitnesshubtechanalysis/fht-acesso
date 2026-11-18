@@ -87,6 +87,39 @@ public sealed class AccessToleranceDecisionTests
     }
 
     [Fact]
+    public void Expired_contract_gets_no_tolerance()
+    {
+        var m = new Member
+        {
+            Id = Guid.NewGuid(),
+            Name = "Eunice",
+            Status = MemberStatus.Active,
+            AccessAllowed = false,
+            OperationalStatus = "expired_recently",
+            FinancialStatus = "no_receivables",
+            AccessStatus = "blocked",
+            ReasonCode = "expired_recently",
+            ValidUntil = new DateTime(2026, 11, 15, 0, 0, 0, DateTimeKind.Utc),
+            UpdatedAt = DateTime.UtcNow
+        };
+        var d = new AccessDecisionEvaluator().Evaluate(m);
+        Assert.Equal(AccessDecisionKind.RequireReception, d.Kind);
+        Assert.False(d.Allowed);
+        Assert.Equal(ContractAccess.PublicMessage, d.PublicMessage);
+        Assert.Equal(ContractAccess.Reason, d.ReasonCode);
+    }
+
+    [Fact]
+    public void End_date_includes_that_civil_day()
+    {
+        var end = new DateTime(2026, 11, 15, 0, 0, 0, DateTimeKind.Utc);
+        var stillValid = new DateTime(2026, 11, 15, 18, 0, 0, DateTimeKind.Utc);
+        var nextDay = new DateTime(2026, 11, 16, 14, 0, 0, DateTimeKind.Utc);
+        Assert.False(ContractAccess.Ended(end, stillValid));
+        Assert.True(ContractAccess.Ended(end, nextDay));
+    }
+
+    [Fact]
     public void Suspended_denied_without_tolerance()
     {
         var m = new Member

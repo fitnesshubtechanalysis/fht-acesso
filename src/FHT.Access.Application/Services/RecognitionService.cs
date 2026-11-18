@@ -76,9 +76,12 @@ public sealed class RecognitionService
     {
         SetState(RecognitionState.Identifying);
 
-        // Prefer local decision immediately — never block gate release on HTTP.
+        // Decisão local na hora. Plano vencido consulta a API uma vez, para uma renovação
+        // feita no balcão liberar nesta mesma aproximação.
         var member = await _members.GetByIdAsync(match.MemberId, cancellationToken).ConfigureAwait(false);
         var decision = _decision.Decide(member, match.Score);
+        decision = await RefreshExpiredContractAsync(member, decision, match.Score, cancellationToken)
+            .ConfigureAwait(false);
 
         _log?.Information(
             $"Face identify: {member?.Name ?? match.MemberId.ToString()} score={match.Score:F3} kind={decision.Kind} allowed={decision.Allowed}");
@@ -116,6 +119,36 @@ public sealed class RecognitionService
     public AccessDecision DecideUnknown() => _decision.Decide(null);
 
     public void Reset() => SetState(RecognitionState.Idle);
+
+    private async Task<AccessDecision> RefreshExpiredContractAsync(
+        Member? member,
+        AccessDecision decision,
+        double? score,
+        CancellationToken cancellationToken)
+    {
+        if (member is null || decision.AllowAutomaticRelease || !NeedsContractRefresh(member, decision))
+            return decision;
+
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(ContractAccess.RefreshTimeout);
+            var refreshed = await _memberSync.RefreshMemberAsync(member.Id, timeout.Token).ConfigureAwait(false);
+            if (!refreshed)
+                return decision;
+            var fresh = await _members.GetByIdAsync(member.Id, cancellationToken).ConfigureAwait(false);
+            return _decision.Decide(fresh, score);
+        }
+        catch
+        {
+            return decision;
+        }
+    }
+
+    private static bool NeedsContractRefresh(Member member, AccessDecision decision) =>
+        decision.ReasonCode == ContractAccess.Reason
+        || member.OperationalStatus is "expired_recently" or "inactive"
+        || ContractAccess.Ended(member.ValidUntil);
 
     private async Task TryEvaluateOnlineAsync(Guid memberId, CancellationToken ct)
     {

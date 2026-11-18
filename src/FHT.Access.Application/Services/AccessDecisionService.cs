@@ -32,6 +32,9 @@ public sealed class AccessDecisionService
         if (IsEmployee(member))
             return DecideEmployee(member, score);
 
+        if (member.Status != MemberStatus.Blocked && ContractAccess.BlocksAutomaticEntry(member))
+            return ContractExpired(member, score);
+
         if (!string.IsNullOrWhiteSpace(member.AccessDecisionKind)
             && Enum.TryParse<AccessDecisionKind>(member.AccessDecisionKind, ignoreCase: true, out var synced))
         {
@@ -77,6 +80,24 @@ public sealed class AccessDecisionService
     public AccessDecision DecideManual(Member? member, string reason, double? score = null)
         => _evaluator.EvaluateManual(member, reason, score);
 
+    private static AccessDecision ContractExpired(Member member, double? score) => new()
+    {
+        Allowed = false,
+        Kind = AccessDecisionKind.RequireReception,
+        MemberId = member.Id,
+        MemberName = member.Name,
+        Score = score,
+        ReasonCode = ContractAccess.Reason,
+        CauseCode = ContractAccess.Reason,
+        OperationalStatus = member.OperationalStatus,
+        FinancialStatus = member.FinancialStatus,
+        AccessStatus = "blocked",
+        AllowAutomaticRelease = false,
+        RequiresManualRelease = true,
+        PublicMessage = ContractAccess.PublicMessage,
+        PrivateMessage = "Contrato encerrado. Pagamento anterior não prorroga a vigência.",
+    };
+
     private static AccessDecision MapSyncedDecision(Member member, AccessDecisionKind kind, double? score)
     {
         var allowed = kind is AccessDecisionKind.AllowRegular
@@ -105,10 +126,19 @@ public sealed class AccessDecisionService
             {
                 AccessDecisionKind.AllowTolerance => AccessDecisionEvaluator.PublicTolerance,
                 AccessDecisionKind.RequireReception or AccessDecisionKind.DenyAdministrative
-                    or AccessDecisionKind.DenySecurity => AccessDecisionEvaluator.PublicReception,
+                    or AccessDecisionKind.DenySecurity => ContractMessageOrReception(member),
                 _ => string.Empty
             },
             PrivateMessage = kind.ToString()
         };
+    }
+
+    private static string ContractMessageOrReception(Member member)
+    {
+        var reason = member.ReasonCode ?? string.Empty;
+        var operational = member.OperationalStatus ?? string.Empty;
+        if (reason is ContractAccess.Reason or "expired_recently" || operational is "expired_recently" or "inactive")
+            return ContractAccess.PublicMessage;
+        return AccessDecisionEvaluator.PublicReception;
     }
 }

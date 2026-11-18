@@ -74,10 +74,15 @@ public sealed class AccessDecisionEvaluator
 
         if (!IsToleranceEligible(lifecycle, operational, financial, access, member))
         {
+            var expired = operational is "expired_recently" or "inactive";
             baseDecision.Kind = AccessDecisionKind.RequireReception;
             baseDecision.Allowed = false;
-            baseDecision.PublicMessage = PublicReception;
-            baseDecision.PrivateMessage = "Situação requer atendimento — tolerância não aplicável.";
+            baseDecision.ReasonCode = expired ? ContractAccess.Reason : causeCode;
+            baseDecision.CauseCode = expired ? ContractAccess.Reason : causeCode;
+            baseDecision.PublicMessage = expired ? ContractAccess.PublicMessage : PublicReception;
+            baseDecision.PrivateMessage = expired
+                ? "Contrato encerrado. Pagamento anterior não prorroga a vigência."
+                : "Situação requer atendimento — tolerância não aplicável.";
             baseDecision.RequiresManualRelease = true;
             return baseDecision;
         }
@@ -182,7 +187,8 @@ public sealed class AccessDecisionEvaluator
         if (lifecycle == "bloqueado") return false;
         if (operational == "suspended") return false;
 
-        if (operational is "no_enrollment" or "inactive" or "expired_recently") return true;
+        if (operational is "expired_recently" or "inactive") return false;
+        if (operational is "no_enrollment") return true;
 
         if (access == "blocked") return false;
         if (access == "manual_review") return true;
@@ -202,8 +208,7 @@ public sealed class AccessDecisionEvaluator
         if (lifecycle == "bloqueado") return "blocked";
         if (operational == "suspended") return "suspended";
         if (operational == "no_enrollment") return "no_active_enrollment";
-        if (operational == "inactive") return "inactive";
-        if (operational == "expired_recently") return "expired_recently";
+        if (operational is "expired_recently" or "inactive") return ContractAccess.Reason;
         if (financial is "overdue" or "partially_paid_overdue") return "overdue_review";
         if (financial == "pending_validation") return "pending_validation";
         if (access == "manual_review") return "manual_review";

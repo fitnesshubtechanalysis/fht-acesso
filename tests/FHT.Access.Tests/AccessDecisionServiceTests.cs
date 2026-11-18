@@ -39,6 +39,50 @@ public class AccessDecisionServiceTests
     }
 
     [Fact]
+    public void Decide_ExpiredContract_DoesNotTurn_EvenIfCacheSaysAllow()
+    {
+        var member = RegularMember();
+        member.OperationalStatus = "expired_recently";
+        member.FinancialStatus = "no_receivables";
+        member.AccessStatus = "blocked";
+        member.AccessDecisionKind = AccessDecisionKind.AllowRegular.ToString();
+        member.ValidUntil = new DateTime(2026, 11, 15, 0, 0, 0, DateTimeKind.Utc);
+
+        var d = _sut.Decide(member);
+        Assert.False(d.Allowed);
+        Assert.False(d.AllowAutomaticRelease);
+        Assert.Equal(AccessDecisionKind.RequireReception, d.Kind);
+        Assert.Equal(ContractAccess.Reason, d.ReasonCode);
+        Assert.Equal(ContractAccess.PublicMessage, d.PublicMessage);
+    }
+
+    [Fact]
+    public void Decide_StaleAllowWithPastEndDate_DoesNotTurn()
+    {
+        var member = RegularMember();
+        member.AccessDecisionKind = AccessDecisionKind.AllowTolerance.ToString();
+        member.OccurrenceCauseCode = "expired_recently";
+        member.ValidUntil = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        var d = _sut.Decide(member);
+        Assert.False(d.AllowAutomaticRelease);
+        Assert.Equal(ContractAccess.Reason, d.ReasonCode);
+    }
+
+    [Fact]
+    public void Decide_ManualRelease_StillOpensExpiredContract()
+    {
+        var member = RegularMember();
+        member.OperationalStatus = "expired_recently";
+        member.ValidUntil = new DateTime(2026, 11, 15, 0, 0, 0, DateTimeKind.Utc);
+
+        var d = _sut.DecideManual(member, "Liberação da recepção");
+        Assert.True(d.Allowed);
+        Assert.Equal(AccessDecisionKind.AllowManual, d.Kind);
+        Assert.True(d.AllowAutomaticRelease);
+    }
+
+    [Fact]
     public void Decide_Regular_ActiveAllowed()
     {
         var member = RegularMember();

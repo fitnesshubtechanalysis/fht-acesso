@@ -13,6 +13,7 @@ public sealed class PinAccessService
     private readonly AccessDecisionService _decisions;
     private readonly AccessEventService _events;
     private readonly IMemberRepository _members;
+    private readonly MemberSyncService _memberSync;
     private readonly AccessStateMachine _states;
     private readonly TurnstileService _turnstile;
     private readonly ReleasedMemberLatch _released;
@@ -34,6 +35,7 @@ public sealed class PinAccessService
         AccessDecisionService decisions,
         AccessEventService events,
         IMemberRepository members,
+        MemberSyncService memberSync,
         AccessStateMachine states,
         TurnstileService turnstile,
         ReleasedMemberLatch released)
@@ -42,6 +44,7 @@ public sealed class PinAccessService
         _decisions = decisions;
         _events = events;
         _members = members;
+        _memberSync = memberSync;
         _states = states;
         _turnstile = turnstile;
         _released = released;
@@ -145,6 +148,24 @@ public sealed class PinAccessService
             _guard.RegisterSuccess();
             _released.ClearParkedCode();
             var decision = _decisions.Decide(member);
+            if (!decision.AllowAutomaticRelease
+                && (decision.ReasonCode == ContractAccess.Reason || ContractAccess.Ended(member.ValidUntil)))
+            {
+                try
+                {
+                    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    timeout.CancelAfter(ContractAccess.RefreshTimeout);
+                    if (await _memberSync.RefreshMemberAsync(member.Id, timeout.Token).ConfigureAwait(false))
+                    {
+                        member = await _members.GetByIdAsync(member.Id, cancellationToken).ConfigureAwait(false) ?? member;
+                        decision = _decisions.Decide(member);
+                    }
+                }
+                catch
+                {
+                    // Sem rede, permanece o bloqueio local.
+                }
+            }
             if (!decision.AllowAutomaticRelease)
             {
                 await _flow.ProcessDeniedOnlyAsync(
