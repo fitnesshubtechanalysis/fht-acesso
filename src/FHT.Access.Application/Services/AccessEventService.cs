@@ -1,4 +1,5 @@
 using System.Text.Json;
+using FHT.Access.Domain;
 using FHT.Access.Domain.Abstractions;
 using FHT.Access.Domain.Entities;
 using FHT.Access.Domain.Enums;
@@ -93,6 +94,7 @@ public sealed class AccessEventService
         SyncStatus = SyncStatus.Pending,
         OccurredAt = DateTime.UtcNow,
         Source = source,
+        Method = AccessIdentification.MethodForSource(source),
         DeviceId = deviceId,
         DenialReason = denialReason
     };

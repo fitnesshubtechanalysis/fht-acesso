@@ -57,7 +57,8 @@ public sealed record AccessEventDto(
     string? DeviceId = null,
     string? DenialReason = null,
     Guid? AttemptId = null,
-    Guid? VisitId = null);
+    Guid? VisitId = null,
+    string? Method = null);
 
 public sealed record GateCommandDto(
     Guid Id,

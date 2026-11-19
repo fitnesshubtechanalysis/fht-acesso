@@ -226,6 +226,8 @@ public sealed class DatabaseInitializer
             .ConfigureAwait(false);
         await EnsureColumnAsync(connection, "AccessEvents", "VisitId", "TEXT", cancellationToken)
             .ConfigureAwait(false);
+        await EnsureColumnAsync(connection, "AccessEvents", "Method", "TEXT", cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static async Task<bool> EnsureColumnAsync(

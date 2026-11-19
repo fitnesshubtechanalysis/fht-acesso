@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FHT.Access.Application.Abstractions;
+using FHT.Access.Domain;
 using FHT.Access.Application.Dtos;
 using FHT.Access.Domain.Abstractions;
 using FHT.Access.Domain.Entities;
@@ -163,6 +164,7 @@ public sealed class OfflineSyncService
             deviceId,
             e.DenialReason,
             e.AttemptId,
-            e.VisitId);
+            e.VisitId,
+            e.Method ?? AccessIdentification.MethodForSource(e.Source));
     }
 }

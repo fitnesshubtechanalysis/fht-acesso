@@ -122,7 +122,7 @@ public sealed class AccessFlowService
         }
 
         if (!decision.AllowAutomaticRelease)
-            return await ProcessDeniedOnlyAsync(decision, direction, ct).ConfigureAwait(false);
+            return await ProcessDeniedOnlyAsync(decision, direction, ct, source).ConfigureAwait(false);
 
         var member = await _members.GetByIdAsync(memberId, ct).ConfigureAwait(false);
         var bypassPresence = member?.BypassPresence == true;

@@ -24,10 +24,10 @@ public sealed class AccessEventRepository : IAccessEventRepository
         command.CommandText = """
             INSERT INTO AccessEvents (
                 Id, MemberId, Direction, Status, PassageConfirmed, SyncStatus,
-                OccurredAt, Source, DeviceId, DenialReason, SyncedAt, AttemptId, VisitId)
+                OccurredAt, Source, DeviceId, DenialReason, SyncedAt, AttemptId, VisitId, Method)
             VALUES (
                 $id, $memberId, $direction, $status, $passage, $sync,
-                $occurredAt, $source, $deviceId, $denial, $syncedAt, $attemptId, $visitId);
+                $occurredAt, $source, $deviceId, $denial, $syncedAt, $attemptId, $visitId, $method);
             """;
         Bind(command, accessEvent);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -51,7 +51,8 @@ public sealed class AccessEventRepository : IAccessEventRepository
                 DenialReason = $denial,
                 SyncedAt = $syncedAt,
                 AttemptId = $attemptId,
-                VisitId = $visitId
+                VisitId = $visitId,
+                Method = $method
             WHERE Id = $id;
             """;
         Bind(command, accessEvent);
@@ -132,7 +133,7 @@ public sealed class AccessEventRepository : IAccessEventRepository
 
     private const string SelectColumns = """
         SELECT Id, MemberId, Direction, Status, PassageConfirmed, SyncStatus,
-               OccurredAt, Source, DeviceId, DenialReason, AttemptId, VisitId
+               OccurredAt, Source, DeviceId, DenialReason, AttemptId, VisitId, Method
         FROM AccessEvents
         """;
 
@@ -148,6 +149,7 @@ public sealed class AccessEventRepository : IAccessEventRepository
         command.Parameters.AddWithValue("$sync", accessEvent.SyncStatus.ToString());
         command.Parameters.AddWithValue("$occurredAt", accessEvent.OccurredAt.ToUniversalTime().ToString("O"));
         command.Parameters.AddWithValue("$source", accessEvent.Source);
+        command.Parameters.AddWithValue("$method", (object?)accessEvent.Method ?? DBNull.Value);
         command.Parameters.AddWithValue("$deviceId", (object?)accessEvent.DeviceId ?? DBNull.Value);
         command.Parameters.AddWithValue("$denial", (object?)accessEvent.DenialReason ?? DBNull.Value);
         command.Parameters.AddWithValue(
@@ -183,6 +185,8 @@ public sealed class AccessEventRepository : IAccessEventRepository
             ev.AttemptId = Guid.Parse(reader.GetString(10));
         if (reader.FieldCount > 11 && !reader.IsDBNull(11))
             ev.VisitId = Guid.Parse(reader.GetString(11));
+        if (reader.FieldCount > 12 && !reader.IsDBNull(12))
+            ev.Method = reader.GetString(12);
 
         return ev;
     }
